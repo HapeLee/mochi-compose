@@ -62,7 +62,7 @@ MochiIconDropdown(
     onExpandedChange = { moreOpen = it },
     items = persistentListOf(
         MochiItem("Copy link", id = "copy"),
-        MochiItem("Pin", id = "pin", checked = pinned),               // independent toggle: a check circle, no selected fill
+        MochiItem("Pin", id = "pin", checked = pinned),               // independent toggle: a check circle when on, no selected fill
         MochiItem("Rename", id = "rename", dividerBefore = true),     // 1dp line at the row top, no extra height
         MochiItem("Share", id = "share", groupTitleBefore = "Collaborate"), // small title inside the row, still one row
         MochiItem("Export PDF", id = "pdf", enabled = false),          // disabled: one row, no highlight, no callback
@@ -75,6 +75,7 @@ MochiIconDropdown(
 - A stable `id` makes rows reuse by identity: reordering items doesn't carry the staggered reveal animation or per-row state over to another item
 - `enabled = false` rows are `disabled` in the semantics tree, and a semantic click won't call `onItemClick`
 - `checked` and `selectedIndex` can coexist: the check column is reserved once, and the selected fill still comes only from `selectedIndex`
+- `checked = false` reserves the slot but draws nothing: a toggle that is off shows no empty circle, and rows stay aligned with the check column
 - `commitAfterDismiss = true` closes the menu first and calls `onItemClick` after the close animation finishes. Use it for work that must not run while the overlay is still attached (switching the root theme, rebuilding the whole tree). The default `false` still calls back first and closes 150ms later
 
 ## One level of submenus
@@ -191,7 +192,7 @@ No `modifier` / `enabled` / `buttonPadding` / `buttonMinWidth` / `buttonMinHeigh
 | icon | `(@Composable (tint: Color) -> Unit)?` | Icon slot, receives the current text color | `null` |
 | id | `String?` | Stable ID: rows reuse by identity, so reordering doesn't carry state over | `null` |
 | enabled | `Boolean` | Per-item disable (still one row, no highlight, no commit) | `true` |
-| checked | `Boolean?` | Independent toggle state (null = plain item), shown as a check circle | `null` |
+| checked | `Boolean?` | Independent toggle state (null = plain item); `true` draws a check circle, `false` reserves the slot and draws nothing | `null` |
 | dividerBefore | `Boolean` | 1dp divider at the row top, no extra height | `false` |
 | groupTitleBefore | `String?` | Small title inside the row, doesn't take an extra row | `null` |
 | children | `ImmutableList<MochiItem>` | One level of submenu (expands only with `onChildClick`) | `persistentListOf()` |

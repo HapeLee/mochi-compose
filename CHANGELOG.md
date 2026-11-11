@@ -7,6 +7,11 @@
 - `MochiItem.children` + `MochiDropdown` / `MochiIconDropdown` 的 `onChildClick(parent, child)`: one level of submenu. Tapping a parent switches layer instead of selecting it, a back row (‹ + parent label) sits at the top of the panel, the system back key pops the layer first, the panel height follows the child count, and the list starts at the top when entering while the top layer keeps its scroll. Without `onChildClick` an item with `children` behaves like a plain item, so an entry can never do nothing. Two levels only.
   `MochiItem.children` 与 `MochiDropdown` / `MochiIconDropdown` 的 `onChildClick(parent, child)`：一层子菜单。点父项是换层不是选中，面板顶部出现返回条（‹ + 父项标题），返回键先退这一层；面板高度按子项个数重算，进子菜单从顶部开始滚、回顶层保留原位。没给 `onChildClick` 时带 `children` 的项按普通项处理，不会出现点了没反应的入口。只支持两层。
 
+### Empty toggle circles / 关掉的开关不画空心圈
+
+- `MochiItem.checked = false` no longer draws an empty check circle: the slot in the check column is still reserved, so rows stay aligned with the checkmark / selected column, but a toggle that is off shows nothing. Matches how iOS menus mark switches, and keeps a list of mostly-off toggles from looking like a column of circles.
+  `MochiItem.checked = false` 不再画空心勾选圈：勾那一列的位置照旧保留（行还是和单选对勾对齐），但关掉的开关什么都不显示。和 iOS 菜单的开关一致，也避免一整列都是圆圈。
+
 ### Anchor-only menu / 只有锚点的菜单
 
 - New `MochiDropdownMenu(anchorBounds, expanded, onExpandedChange, items, onItemClick, …)`: the menu overlay is now independent of the button, so a caller that draws its own button (its own top bar button, an icon button, any custom control) still gets the native panel, items, submenus, scrolling and back handling. The `IntRect` anchor is in window coordinates, nothing is drawn in the overlay where the button would be, and there is no press-to-open or press-and-slide. `anchorColor` adds the metaball neck when the anchor does have a background colour.

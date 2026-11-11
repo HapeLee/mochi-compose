@@ -360,12 +360,14 @@ private fun LiquidRow(
     }
 }
 
-/** 行尾的勾：单选的对勾画勾，独立开关画勾选圈（纯展示，点整行切换） */
+/** 行尾的勾：单选的对勾画勾，独立开关只在打开时画勾选圈（未选中不画空圈） */
 @Composable
 private fun ItemCheck(item: MochiItem, selected: Boolean, showCheck: Boolean, color: Color) {
     val checked = item.checked
     if (checked != null && !selected) {
-        MochiCheckbox(checked, null, Modifier.size(20.dp), enabled = item.enabled)
+        // 关掉的开关不画空心圈：留空比一圈灰边干净，也和 iOS 菜单只在打开时给对勾一致。
+        // 勾那一列的位置照旧保留（见 checkColumn），文字和单选对勾仍然对齐
+        if (checked) MochiCheckbox(true, null, Modifier.size(20.dp), enabled = item.enabled)
     } else if (showCheck) {
         MochiGlyphs.Check(color)
     }

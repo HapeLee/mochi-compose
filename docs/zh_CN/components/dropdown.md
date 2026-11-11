@@ -62,7 +62,7 @@ MochiIconDropdown(
     onExpandedChange = { moreOpen = it },
     items = persistentListOf(
         MochiItem("拷贝链接", id = "copy"),
-        MochiItem("置顶", id = "pin", checked = pinned),              // 独立开关：显示勾选圈，不铺选中底色
+        MochiItem("置顶", id = "pin", checked = pinned),              // 独立开关：打开时显示勾选圈，不铺选中底色
         MochiItem("重命名", id = "rename", dividerBefore = true),     // 行顶一条分隔线，不占额外高度
         MochiItem("分享", id = "share", groupTitleBefore = "协作"),    // 行内上方的小标题，仍是一行
         MochiItem("导出为 PDF", id = "pdf", enabled = false),          // 禁用：仍占一行，滑过不高亮、点了不回调
@@ -75,6 +75,7 @@ MochiIconDropdown(
 - `id` 稳定时行按它复用：菜单项重新排序不会把逐项错开出现的动画和状态串到别的项上
 - `enabled = false` 的项在无障碍树里是 disabled，语义点击也不会触发 `onItemClick`
 - `checked` 与 `selectedIndex` 可以并存：勾那一列只留一次，选中底色只由 `selectedIndex` 决定
+- `checked = false` 只留位置不画空心圈：关掉的开关什么都不显示，和单选对勾那列始终对齐
 - `commitAfterDismiss = true`：先收起菜单，等收起动画结束再回调 `onItemClick`。切换根主题、重建整棵界面这类「浮层还挂着就不能做」的操作要开它（默认 `false` 仍然是先回调、150ms 后收起）
 
 ## 一层子菜单
@@ -191,7 +192,7 @@ Box(Modifier.onGloballyPositioned { bounds = it.boundsInWindow().roundToIntRect(
 | icon | `(@Composable (tint: Color) -> Unit)?` | 图标插槽，参数是当前文字颜色 | `null` |
 | id | `String?` | 稳定 ID：行按它复用，顺序变了不串状态 | `null` |
 | enabled | `Boolean` | 逐项禁用（仍占一行，不高亮、不提交） | `true` |
-| checked | `Boolean?` | 独立开关的勾选态（null = 普通项），显示勾选圈 | `null` |
+| checked | `Boolean?` | 独立开关的勾选态（null = 普通项）；`true` 画勾选圈，`false` 只留不画 | `null` |
 | dividerBefore | `Boolean` | 行顶画一条分隔线，不额外占高 | `false` |
 | groupTitleBefore | `String?` | 行内上方的小标题，不额外占一行高 | `null` |
 | children | `ImmutableList<MochiItem>` | 一层子菜单（需要 `onChildClick` 才展开） | `persistentListOf()` |
