@@ -7,12 +7,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -35,7 +41,13 @@ class MochiDropdownMenuTest {
 
     private val anchor = IntRect(IntOffset(40, 40), IntSize(120, 48))
 
-    private fun show(expanded: Boolean = true, onItemClick: (Int) -> Unit = {}, onExpandedChange: (Boolean) -> Unit = {}) {
+    private fun show(
+        expanded: Boolean = true,
+        items: ImmutableList<MochiItem> = persistentListOf(MochiItem("最近"), MochiItem("名称")),
+        selectedIndex: Int = -1,
+        onItemClick: (Int) -> Unit = {},
+        onExpandedChange: (Boolean) -> Unit = {},
+    ) {
         rule.setContent {
             MochiTheme(systemBarAppearance = false) {
                 Box(Modifier.fillMaxSize()) {
@@ -43,8 +55,9 @@ class MochiDropdownMenuTest {
                         anchorBounds = anchor,
                         expanded = expanded,
                         onExpandedChange = onExpandedChange,
-                        items = persistentListOf(MochiItem("最近"), MochiItem("名称")),
+                        items = items,
                         onItemClick = onItemClick,
+                        selectedIndex = selectedIndex,
                     )
                 }
             }
@@ -82,5 +95,32 @@ class MochiDropdownMenuTest {
         rule.waitForIdle()
         rule.onNodeWithText("名称").performClick()
         assertEquals(1, clicked)
+    }
+
+    @Test
+    fun disabledItemStaysOnItsRowButCannotBeSelected() {
+        var clicked = -1
+        show(
+            items = persistentListOf(MochiItem("最近"), MochiItem("名称", enabled = false)),
+            onItemClick = { clicked = it },
+        )
+        rule.waitForIdle()
+        // 仍占一行（面板高度不变），但语义上禁用、点了不回调
+        rule.onNodeWithText("名称").assertIsNotEnabled()
+        rule.onNodeWithText("名称").performClick()
+        assertEquals(-1, clicked)
+    }
+
+    @Test
+    fun checkedItemReportsCheckboxRole() {
+        show(items = persistentListOf(MochiItem("最近"), MochiItem("置顶", checked = false)))
+        rule.waitForIdle()
+        // 独立勾选的项是开关；单选（selectedIndex）菜单里的行仍是按钮
+        rule.onNodeWithText("置顶").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox),
+        )
+        rule.onNodeWithText("最近").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button),
+        )
     }
 }
