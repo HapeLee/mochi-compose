@@ -298,6 +298,10 @@ internal fun mochiStyle(c: MochiDropdownColors, b: MochiDropdownBehavior, p: Moc
  * - API 33+ 用 AGSL 画融球；33 以下自动降级成两个独立 G2 形状
  * - 系统关了动画（开发者选项动画时长 0）时，果冻 / 融球 / 橡皮筋这些弹性效果全关，对应 iOS 的「减弱动态效果」
  * - [onClick]：给了并且 trigger = LongPress 时，轻点执行它、长按才打开菜单（比如返回按钮：点了返回，长按看历史）
+ * - 每项可以单独禁用（[MochiItem.enabled]）、带独立对勾（[MochiItem.checked]）、前面加分隔线 / 分组小标题，
+ *   行高和几何不变；[commitAfterDismiss] = true 时先收起菜单、等收起动画结束再回调 [MochiItem] 的点击
+ * - [MochiItem.children] 给一层子菜单：点父项换成子菜单那一层（顶部出现返回条，返回键也退这一层），
+ *   子项点击走 [onChildClick]；没给 [onChildClick] 时带 children 的项按普通项处理
  */
 @Composable
 public fun MochiDropdown(
@@ -317,6 +321,8 @@ public fun MochiDropdown(
     buttonMinWidth: Dp = 0.dp,
     buttonMinHeight: Dp = MochiDropdownDefaults.ButtonMinHeight,
     onClick: (() -> Unit)? = null,
+    commitAfterDismiss: Boolean = false,
+    onChildClick: ((parent: Int, child: Int) -> Unit)? = null,
     buttonContent: @Composable RowScope.() -> Unit,
 ) {
     DropdownCore(
@@ -324,6 +330,7 @@ public fun MochiDropdown(
         onExpandedChange = onExpandedChange,
         items = items,
         onItemClick = onItemClick,
+        onChildClick = onChildClick,
         enabled = enabled,
         selectedIndex = selectedIndex,
         colors = colors,
@@ -335,6 +342,7 @@ public fun MochiDropdown(
         buttonMinWidth = buttonMinWidth,
         buttonMinHeight = buttonMinHeight,
         onClick = onClick,
+        commitAfterDismiss = commitAfterDismiss,
         modifier = modifier,
         buttonContent = buttonContent,
     )
@@ -368,6 +376,8 @@ internal fun DropdownCore(
     buttonMinHeight: Dp,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    commitAfterDismiss: Boolean = false,
+    onChildClick: ((Int, Int) -> Unit)? = null,
     header: String? = null,
     content: (@Composable ColumnScope.() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -398,12 +408,14 @@ internal fun DropdownCore(
         expanded = expanded,
         onExpandedChange = onExpandedChange,
         onItemClick = onItemClick,
-        itemCount = items.size,
+        items = items,
         style = style,
         motion = menuMotion,
         dismissDelayMillis = behavior.dismissDelayMillis,
         anchorSize = { anchor.rect.size },
         onTap = onClick,
+        onChildClick = onChildClick,
+        commitAfterDismiss = commitAfterDismiss,
     )
     val controller = engine.controller
     val callbacks = engine.callbacks
@@ -429,12 +441,14 @@ internal fun DropdownCore(
             .semantics {
                 role = Role.Button
                 if (enabled) {
+                    // Press 是「按下即开」的触发器：无障碍 / 键盘的「点击」必须打开菜单，不能被 onClick 抢走
                     onClick {
                         val c = currentOnClick
-                        if (c != null) c() else currentOnExpandedChange(!currentExpanded)
+                        if (trigger == MochiTrigger.LongPress && c != null) c() else currentOnExpandedChange(!currentExpanded)
                         true
                     }
-                    if (currentOnClick != null) {
+                    // 长按动作只在长按触发器下有意义（Press 按下就开，没有「长按」这一档）
+                    if (trigger == MochiTrigger.LongPress) {
                         onLongClick {
                             currentOnExpandedChange(true)
                             true
@@ -517,6 +531,8 @@ public fun MochiIconDropdown(
     menuWidth: Dp = MochiDropdownDefaults.IconMenuWidth,
     size: Dp = MochiDropdownDefaults.IconButtonSize,
     onClick: (() -> Unit)? = null,
+    commitAfterDismiss: Boolean = false,
+    onChildClick: ((parent: Int, child: Int) -> Unit)? = null,
     icon: @Composable () -> Unit,
 ) {
     MochiDropdown(
@@ -536,6 +552,8 @@ public fun MochiIconDropdown(
         buttonMinWidth = size,
         buttonMinHeight = size,
         onClick = onClick,
+        commitAfterDismiss = commitAfterDismiss,
+        onChildClick = onChildClick,
     ) { icon() }
 }
 

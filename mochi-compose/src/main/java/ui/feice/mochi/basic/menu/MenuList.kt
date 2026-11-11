@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -59,6 +60,7 @@ import kotlinx.coroutines.launch
 import ui.feice.mochi.anim.MochiMotion
 import ui.feice.mochi.anim.MochiMotions
 import ui.feice.mochi.basic.LiquidMenu
+import ui.feice.mochi.basic.MochiCheckbox
 import ui.feice.mochi.basic.MochiItem
 import ui.feice.mochi.basic.MochiItemLayout
 import ui.feice.mochi.basic.MochiStyle
@@ -71,6 +73,7 @@ import ui.feice.mochi.effect.glow.drawGlow
 import ui.feice.mochi.effect.glow.rememberMochiGlowState
 import ui.feice.mochi.shape.G2PathCache
 import ui.feice.mochi.shape.continuityFor
+import ui.feice.mochi.theme.MochiDefaults
 import ui.feice.mochi.theme.MochiTheme
 
 /** 按着选项时高亮块缩到多少 */
@@ -84,6 +87,7 @@ private val ItemFollow = 3.dp
  * - 滑动高亮块：前缘快、后缘慢，滑动时被拉长、横向收窄一点
  * - 按着选项：高亮块缩到 0.96、朝手指偏一点，选项自己亮起高光（比面板的光跟得快）
  * - Material 布局有独立滑动的选中块；iOS 布局对勾在最左
+ * - 每项可以单独禁用、带独立勾选圈、行顶分隔线和行内分组小标题，行高和几何都不变
  * - 打开时逐项错开出现；列表能滚动时只组合视口里的几项
  *
  * @param hover 手指此刻在第几项上（-1 = 不在）
@@ -224,14 +228,20 @@ internal fun MochiList(
                 .wrapContentHeight(Alignment.Top, unbounded = true)
                 .offset { IntOffset(0, (from * itemH - scroll()).roundToInt()) },
         ) {
-            val radio = selectedIndex >= 0
+            // 有单选（selectedIndex）或有独立对勾的项时，左边要留出勾那一列，文字才对得齐
+            val checkColumn = selectedIndex >= 0 || items.any { it.checked != null }
             val icons = items.any { it.icon != null }
+            val dividerColor = MochiTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
             for (i in from until until) {
-                key(i) {
-                    val item = items[i]
+                val item = items[i]
+                // 行按稳定 ID 复用：菜单项顺序变了（比如按使用频率重排）也不会把动画和状态串到别的项上
+                key(item.id ?: i) {
                     val selected = i == selectedIndex
+                    // 单选的对勾优先；没有单选时按项自己的 checked 画勾选圈
+                    val showCheck = selected || item.checked != null
                     val base = if (item.destructive) style.destructiveColor else style.onPanelColor
                     val color by animateColorAsState(if (selected && !ios) style.onSelectedColor else base, label = "itemColor")
+                    val contentColor = if (item.enabled) color else color.copy(alpha = MochiDefaults.DisabledAlpha)
                     val row = Modifier
                         // 不错开出现的曲线不给每一行单独开 layer
                         .then(
@@ -246,16 +256,43 @@ internal fun MochiList(
                             },
                         )
                         .semantics(mergeDescendants = true) {
-                            role = Role.Button
-                            onClick {
-                                onSelect(i)
-                                true
+                            // 独立对勾的项是开关；单选菜单里的行仍是按钮
+                            role = if (item.checked != null && !selected) Role.Checkbox else Role.Button
+                            if (item.enabled) {
+                                onClick {
+                                    onSelect(i)
+                                    true
+                                }
+                            } else {
+                                disabled()
                             }
                         }
                         .fillMaxWidth()
                         .height(style.itemHeight)
+                        // 行顶的分隔线：画在行内，不改行高，几何和滚动量都不受影响
+                        .then(
+                            if (item.dividerBefore) {
+                                Modifier.drawBehind {
+                                    val inset = if (style.liquid) {
+                                        LiquidMenu.Padding
+                                    } else if (ios) {
+                                        12.dp
+                                    } else {
+                                        16.dp
+                                    }
+                                    val x = inset.toPx()
+                                    drawRect(
+                                        dividerColor,
+                                        topLeft = Offset(x, 0f),
+                                        size = Size((size.width - x).coerceAtLeast(0f), 1.dp.toPx()),
+                                    )
+                                }
+                            } else {
+                                Modifier
+                            },
+                        )
                     if (style.liquid) {
-                        LiquidRow(item, color, selected, radio, icons, row)
+                        LiquidRow(item, contentColor, selected, showCheck, checkColumn, icons, row)
                     } else {
                         Row(
                             row.padding(start = if (ios) 12.dp else 16.dp, end = 16.dp),
@@ -263,22 +300,22 @@ internal fun MochiList(
                         ) {
                             if (ios) {
                                 // 勾在最左，单选菜单里每行都留位置，文字才对齐
-                                if (radio) {
-                                    Box(Modifier.size(20.dp)) { if (selected) MochiGlyphs.Check(color) }
+                                if (checkColumn) {
+                                    Box(Modifier.size(20.dp)) { ItemCheck(item, selected, showCheck, contentColor) }
                                     Spacer(Modifier.width(10.dp))
                                 }
-                                ItemLabel(item.label, color, Modifier.weight(1f))
+                                ItemLabelBlock(item, contentColor, Modifier.weight(1f))
                                 if (item.icon != null) {
                                     Spacer(Modifier.width(10.dp))
-                                    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { item.icon(color) }
+                                    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { item.icon(contentColor) }
                                 }
                             } else {
                                 if (item.icon != null) {
-                                    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { item.icon(color) }
+                                    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { item.icon(contentColor) }
                                     Spacer(Modifier.width(12.dp))
                                 }
-                                ItemLabel(item.label, color, Modifier.weight(1f))
-                                if (selected) MochiGlyphs.Check(color)
+                                ItemLabelBlock(item, contentColor, Modifier.weight(1f))
+                                if (showCheck) ItemCheck(item, selected, showCheck, contentColor)
                             }
                         }
                     }
@@ -295,12 +332,22 @@ internal fun MochiList(
  * iOS 的行占满菜单宽，Mochi 的列表整体缩进 [LiquidMenu.Inset]，这里都减掉它
  */
 @Composable
-private fun LiquidRow(item: MochiItem, color: Color, selected: Boolean, radio: Boolean, icons: Boolean, modifier: Modifier = Modifier) {
+private fun LiquidRow(
+    item: MochiItem,
+    color: Color,
+    selected: Boolean,
+    showCheck: Boolean,
+    checkColumn: Boolean,
+    icons: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val m = LiquidMenu
-    val l = m.Padding + if (radio) m.SelectionIndent else 0.dp
+    val l = m.Padding + if (checkColumn) m.SelectionIndent else 0.dp
     Box(modifier.padding(end = m.Padding - m.Inset), contentAlignment = Alignment.CenterStart) {
-        if (selected) {
-            Box(Modifier.offset(x = l / 2 + m.CheckOffset - m.Inset - CheckSize / 2).size(CheckSize)) { MochiGlyphs.Check(color) }
+        if (showCheck) {
+            Box(Modifier.offset(x = l / 2 + m.CheckOffset - m.Inset - CheckSize / 2).size(CheckSize)) {
+                ItemCheck(item, selected, showCheck, color)
+            }
         }
         if (item.icon != null) {
             Box(
@@ -309,7 +356,36 @@ private fun LiquidRow(item: MochiItem, color: Color, selected: Boolean, radio: B
             ) { item.icon(color) }
         }
         val start = if (icons) l + m.ImageGap + m.ImageBox + m.ImageOffset else l
-        ItemLabel(item.label, color, Modifier.padding(start = start - m.Inset))
+        ItemLabelBlock(item, color, Modifier.padding(start = start - m.Inset))
+    }
+}
+
+/** 行尾的勾：单选的对勾画勾，独立开关画勾选圈（纯展示，点整行切换） */
+@Composable
+private fun ItemCheck(item: MochiItem, selected: Boolean, showCheck: Boolean, color: Color) {
+    val checked = item.checked
+    if (checked != null && !selected) {
+        MochiCheckbox(checked, null, Modifier.size(20.dp), enabled = item.enabled)
+    } else if (showCheck) {
+        MochiGlyphs.Check(color)
+    }
+}
+
+/** 标题（+ 行上的分组小标题）整块：小标题压在同一行里，行高不变 */
+@Composable
+private fun ItemLabelBlock(item: MochiItem, color: Color, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        val title = item.groupTitleBefore
+        if (title != null) {
+            Text(
+                title,
+                color = color.copy(alpha = 0.6f),
+                style = MochiTheme.textStyles.footnote,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        ItemLabel(item.label, color)
     }
 }
 

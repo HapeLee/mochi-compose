@@ -22,7 +22,7 @@ The content is composed a second time in the overlay for the preview, so it shou
 
 | Parameter | Description |
 |---|---|
-| items | Menu items (`MochiItem`, shared with MochiDropdown: label, destructive, icon) |
+| items | Menu items (`MochiItem`, shared with MochiDropdown: label, destructive, icon; per-item disabled / checked / dividers apply here too, but `children` is not expanded) |
 | onItemClick | Selection callback |
 | shape | Shadow outline when lifted |
 | enabled / hapticProfile | Enabled, haptics |

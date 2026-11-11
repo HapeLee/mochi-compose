@@ -100,6 +100,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -143,12 +144,33 @@ import ui.feice.mochi.utils.windowOriginOnScreen
 
 // ───────────────────────── 公开 API ─────────────────────────
 
-/** 菜单项。icon 是一个拿到当前文字颜色的插槽，用什么图标库都行。 */
+/**
+ * 菜单项。icon 是一个拿到当前文字颜色的插槽，用什么图标库都行。
+ *
+ * 后五个参数是给「菜单不是临时列出来的，而是长期存在的同一组操作」用的：稳定 [id]（动画和状态按它走，
+ * 列表顺序变了也不会串）、逐项 [enabled]、独立于单选的对勾 [checked]、行顶的分隔线和不额外占行高的分组小标题。
+ * 它们都不改变行高和几何：每项仍占一行，`onItemClick` 仍是被点的那一项在 `items` 里的下标。
+ */
 @Immutable
 public class MochiItem(
     public val label: String,
     public val destructive: Boolean = false,
     public val icon: (@Composable (tint: Color) -> Unit)? = null,
+    /** 稳定 ID：列表顺序变化时行按它复用，不按位置 */
+    public val id: String? = null,
+    /** 逐项禁用：仍占一行，按住滑过不高亮、不提交 */
+    public val enabled: Boolean = true,
+    /** null = 普通项；true / false = 独立开关的对勾（和 [MochiDropdown] 的选中态无关） */
+    public val checked: Boolean? = null,
+    /** 这一行的顶边画一条分隔线（不额外占高） */
+    public val dividerBefore: Boolean = false,
+    /** 这一行上方的小标题，压在同一行里（不额外占一行高） */
+    public val groupTitleBefore: String? = null,
+    /**
+     * 一层子菜单（只支持两层，子项自带的 children 忽略）。点这一项换成子菜单那一层，
+     * 子项要由 [MochiDropdown] 的 `onChildClick` 接（没给就按普通项处理，children 不展开）
+     */
+    public val children: ImmutableList<MochiItem> = persistentListOf(),
 )
 
 /** 面板相对按钮的对齐 */

@@ -21,6 +21,15 @@ MochiPopoverButton(
 - **Use `MochiPopoverBox` only when the anchor is not a button** (a tip shown programmatically, a custom control): it does not own the anchor, so there is no press feedback or color blending
 - When the panel holds a list of options, do not lay out `MochiListRow`s in a popover; use `MochiDropdown` / `MochiIconDropdown`. The highlight, press-and-slide and ticks come from the menu engine
 
+Content inside the panel can close it by reading `LocalMochiDismiss` (provided inside the panel, equivalent to `onExpandedChange(false)`); the `content` form of `MochiDropdown` provides the same value:
+
+```kotlin
+MochiPopoverButton(expanded, { open = it }, popover = {
+    val dismiss = LocalMochiDismiss.current
+    MochiButton({ dismiss() }) { Text("OK") }
+}) { Text("Details") }
+```
+
 `MochiPopoverBox` behaviour:
 
 - Opens below the anchor; flips above when there is not enough room below and more above. It aligns to the anchor by `align` and is clamped to the screen margins

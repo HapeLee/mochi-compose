@@ -2,6 +2,27 @@
 
 ## Unreleased / 未发布
 
+### Submenus / 一层子菜单
+
+- `MochiItem.children` + `MochiDropdown` / `MochiIconDropdown` 的 `onChildClick(parent, child)`: one level of submenu. Tapping a parent switches layer instead of selecting it, a back row (‹ + parent label) sits at the top of the panel, the system back key pops the layer first, the panel height follows the child count, and the list starts at the top when entering while the top layer keeps its scroll. Without `onChildClick` an item with `children` behaves like a plain item, so an entry can never do nothing. Two levels only.
+  `MochiItem.children` 与 `MochiDropdown` / `MochiIconDropdown` 的 `onChildClick(parent, child)`：一层子菜单。点父项是换层不是选中，面板顶部出现返回条（‹ + 父项标题），返回键先退这一层；面板高度按子项个数重算，进子菜单从顶部开始滚、回顶层保留原位。没给 `onChildClick` 时带 `children` 的项按普通项处理，不会出现点了没反应的入口。只支持两层。
+
+### Anchor-only menu / 只有锚点的菜单
+
+- New `MochiDropdownMenu(anchorBounds, expanded, onExpandedChange, items, onItemClick, …)`: the menu overlay is now independent of the button, so a caller that draws its own button (its own top bar button, an icon button, any custom control) still gets the native panel, items, submenus, scrolling and back handling. The `IntRect` anchor is in window coordinates, nothing is drawn in the overlay where the button would be, and there is no press-to-open or press-and-slide. `anchorColor` adds the metaball neck when the anchor does have a background colour.
+  新增 `MochiDropdownMenu(anchorBounds, expanded, onExpandedChange, items, onItemClick, …)`：菜单浮层从按钮里拆出来，自己画按钮的调用方（项目顶栏按钮、图标按钮、任意自定义控件）也能拿到原生面板、选项、子菜单、滚动和返回键。`IntRect` 锚点是窗口坐标，浮层里不画按钮那一端，也没有「按下即开」和按住滑选；锚点有底色时传 `anchorColor` 就能连上融球颈。
+
+### Menu items: per-item state, checks, grouping / 菜单项：逐项状态、勾选、分组
+
+- `MochiItem` gains `id`, `enabled`, `checked`, `dividerBefore` and `groupTitleBefore`: disabled rows keep their slot but never highlight or commit, `checked` draws an independent check circle next to the single-select checkmark, a divider is drawn at the row top and a group title sits inside the row, so panel height, scroll range and `onItemClick(index)` semantics are unchanged. Rows are keyed by `id` when given, so reordering doesn't carry state over. `MochiContextMenu` gets the same behaviour.
+  `MochiItem` 新增 `id`、`enabled`、`checked`、`dividerBefore`、`groupTitleBefore`：禁用项仍占一行但不亮、不提交；`checked` 在单选对勾之外画独立勾选圈；分隔线画在行顶、分组小标题压在同一行里，面板高度、滚动量和 `onItemClick(index)` 语义都不变。给了 `id` 的行按它复用，重排不会串状态。`MochiContextMenu` 同样生效。
+- `MochiDropdown` / `MochiIconDropdown` gain `commitAfterDismiss = true`: close the menu first and call `onItemClick` after the close animation finishes, for work that must not run while the DecorView overlay is still attached (switching the root theme). The default keeps the old order.
+  `MochiDropdown` / `MochiIconDropdown` 新增 `commitAfterDismiss = true`：先收起菜单，等收起动画结束再回调 `onItemClick`，给「浮层还挂着就不能做」的操作（比如切换根主题）用。默认顺序不变。
+- Fixed: with `trigger = Press`, the button's semantic click (accessibility, keyboard) now always opens the menu instead of running `onClick`; `onLongClick` is installed only for `trigger = LongPress`.
+  修正：`trigger = Press` 时按钮的语义点击（无障碍、键盘）现在总是打开菜单，不再执行 `onClick`；`onLongClick` 只在长按触发器下安装。
+- `LocalMochiDismiss`: content inside a popover panel (`MochiPopoverButton`, `MochiPopoverBox`, the `content` form of `MochiDropdown`) can close it without capturing the caller's closure.
+  `LocalMochiDismiss`：弹出层面板里的内容（`MochiPopoverButton`、`MochiPopoverBox`、`MochiDropdown` 的 `content` 模式）不用再拿调用方的闭包就能关掉面板。
+
 ### Maven Central, shadow levels, selection cards / Maven Central、阴影档位、选择卡片
 
 - **Breaking (coordinates):** the library is published to Maven Central as `io.github.feice11:mochi-compose`, together with `mochi-icons`, `mochi-ios` and `mochi-nothing` (the two appearance modules were not published before). No extra repository is needed. Package names stay `ui.feice.mochi`. Old 0.1.x versions remain on JitPack.

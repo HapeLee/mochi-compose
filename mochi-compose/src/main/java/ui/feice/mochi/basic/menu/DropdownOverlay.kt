@@ -133,6 +133,7 @@ import ui.feice.mochi.anim.MochiMotion
 import ui.feice.mochi.anim.MochiMotions
 import ui.feice.mochi.basic.BarGroupHandle
 import ui.feice.mochi.basic.LocalBarControlGlass
+import ui.feice.mochi.basic.LocalMochiDismiss
 import ui.feice.mochi.basic.MochiAlign
 import ui.feice.mochi.basic.MochiItem
 import ui.feice.mochi.basic.MochiItemLayout
@@ -141,6 +142,7 @@ import ui.feice.mochi.basic.MochiStyle
 import ui.feice.mochi.basic.MochiTrigger
 import ui.feice.mochi.basic.Text
 import ui.feice.mochi.basic.liquid
+import ui.feice.mochi.basic.parts.MochiGlyphs
 import ui.feice.mochi.basic.popoverPlacement
 import ui.feice.mochi.effect.elastic.MochiRubberBandState
 import ui.feice.mochi.effect.elastic.jellyCrossScale
@@ -197,6 +199,9 @@ internal fun MochiOverlay(
     callbacks: MochiCallbacks,
     trigger: MochiTrigger,
     items: List<MochiItem>,
+    /** 子菜单层：-1 = 顶层，其余是展开子菜单的父项下标 */
+    parentIndex: Int,
+    onBack: () -> Unit,
     selectedIndex: Int,
     style: MochiStyle,
     motion: MochiMotion,
@@ -210,7 +215,16 @@ internal fun MochiOverlay(
     content: (@Composable ColumnScope.() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     group: BarGroupHandle? = null,
-    buttonContent: @Composable RowScope.() -> Unit,
+    /**
+     * 锚点那一端画什么：给了就在锚点矩形上叠一份克隆（接管按压 / 按住滑选），
+     * null = 按钮归调用方（[MochiDropdownMenu] 这种只有锚点、没有按钮的入口），浮层里不画按钮
+     */
+    buttonContent: (@Composable RowScope.() -> Unit)? = null,
+    /**
+     * 只画面板这一块身体、不画锚点那一块和融球颈：锚点不归库（库不知道它的底色和外形），
+     * 面板直接从锚点位置长出来，见 [MochiDropdownMenu]
+     */
+    singleBlob: Boolean = false,
 ) {
     val view = LocalView.current
     val headerMeasurer = rememberTextMeasurer()
@@ -218,13 +232,21 @@ internal fun MochiOverlay(
     var contentHeight by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val px = remember(style, density) { MochiPx(style, density) }
+    // 子菜单层：进到子菜单时几何、滚动、显示项都换成子项那一组（面板随之变高变矮）
+    val inSubmenu = parentIndex in items.indices
+    val layerItems = menuLayer(items, parentIndex)
     val renderer = rememberMochiMetaballRenderer()
     var origin by remember { mutableStateOf<Offset?>(null) }
     var containerSize by remember { mutableStateOf(Size.Zero) }
     val cover = style.openMode == MochiOpenMode.Cover
     val ios = style.itemLayout == MochiItemLayout.Ios
+    // 和列表行顶分隔线同一个颜色
+    val dividerColor = MochiTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
     val hlPathCache = remember { G2PathCache() }
-    val metaballColors = remember(style) { MochiMetaballColors(style.buttonColor, style.panelColor, style.shadowColor) }
+    // 只有面板一块时两端同色，免得单块本体上还跑按钮色→面板色的渐变
+    val metaballColors = remember(style, singleBlob) {
+        MochiMetaballColors(if (singleBlob) style.panelColor else style.buttonColor, style.panelColor, style.shadowColor)
+    }
     val scope = rememberCoroutineScope()
     val scroller = remember(controller, density) { DropdownScroller(controller, scope, density) }
     DisposableEffect(scroller) {
@@ -306,7 +328,10 @@ internal fun MochiOverlay(
         val anchor = mergeGroup?.rect?.translate(-o) ?: button
         val start = anchor
         val panelWidth = if (matchAnchorWidth) max(px.menuWidth, anchor.width) else px.menuWidth
-        val headerPx = if (header == null || content != null) {
+        val headerPx = if (inSubmenu) {
+            // 子菜单的返回条：和分组标题一样占一条，手指在它上面不算选项
+            with(density) { SubmenuHeaderHeight.toPx() }
+        } else if (header == null || content != null) {
             0f
         } else {
             val hp = with(density) { HeaderPadding.toPx() }
@@ -331,19 +356,32 @@ internal fun MochiOverlay(
                 align = style.align,
             ).let { it.rect to it.upward }
         } else {
-            computeTarget(anchor, containerSize, items.size, style.openMode, px, matchAnchorWidth, safeTop, safeBottom, headerPx)
+            computeTarget(anchor, containerSize, layerItems.size, style.openMode, px, matchAnchorWidth, safeTop, safeBottom, headerPx)
         }
         val viewport = target.height - px.panelPadding * 2f - headerPx
         SideEffect {
             controller.panelOnScreen = target.translate(o)
             controller.headerPx = headerPx
             controller.upward = upward
-            controller.maxScroll = max(0f, items.size * px.itemHeight - viewport)
+            controller.maxScroll = max(0f, layerItems.size * px.itemHeight - viewport)
             scroller.viewport = viewport
         }
         // 打开时把选中项滚到视口中间
         LaunchedEffect(scroller) {
             scroller.snapTo(if (selectedIndex >= 0) selectedIndex * px.itemHeight - (viewport - px.itemHeight) / 2f else 0f)
+        }
+        // 换层：进子菜单从顶上开始，回顶层回到原来的位置（打开时的那次定位在上面，这里跳过第一次组合）
+        var topScroll by remember { mutableFloatStateOf(0f) }
+        val lastLayer = remember { mutableIntStateOf(parentIndex) }
+        LaunchedEffect(parentIndex) {
+            if (parentIndex == lastLayer.intValue) return@LaunchedEffect
+            if (parentIndex >= 0) {
+                topScroll = controller.scroll
+                scroller.snapTo(0f)
+            } else {
+                scroller.snapTo(topScroll)
+            }
+            lastLayer.intValue = parentIndex
         }
         val currentOnReady by rememberUpdatedState(onReady)
         LaunchedEffect(Unit) { currentOnReady() }
@@ -411,10 +449,32 @@ internal fun MochiOverlay(
                         base
                     }
                     // 从按钮组里脱出来时按压的光交给组的玻璃，这里不画
+                    // 没有按钮（只有锚点）时只画面板本体：锚点那块不归库画，也就不连颈
+                    val body = if (singleBlob) {
+                        val blob = MochiBlob(f.panel, f.panelRadius)
+                        MochiMetaballFrame(blob, blob, 0f)
+                    } else {
+                        f.metaball
+                    }
+                    // 锚点不归库画时，面板收起最后一段正好缩成和按钮一样大的实心圆，
+                    // 会像一层圆形遮罩盖在真按钮上。收起的尾段让本体淡出，别缩到按钮上再消失
+                    val bodyAlpha = if (singleBlob && !callbacks.isExpanded()) {
+                        smoothstep(0f, 0.2f, cl)
+                    } else {
+                        1f
+                    }
+                    val bodyColors = if (bodyAlpha < 1f) {
+                        colors.copy(
+                            a = colors.a.copy(alpha = colors.a.alpha * bodyAlpha),
+                            b = colors.b.copy(alpha = colors.b.alpha * bodyAlpha),
+                        )
+                    } else {
+                        colors
+                    }
                     drawMochiMetaball(
                         renderer,
-                        f.metaball,
-                        colors,
+                        body,
+                        bodyColors,
                         shadow,
                         style.g2Smoothing,
                         if (group !=
@@ -447,31 +507,35 @@ internal fun MochiOverlay(
             )
         }
 
-        // 2) 按钮克隆：和真按钮同位置同手势，包裹模式下内容淡出
-        with(density) {
-            Row(
-                Modifier
-                    .offset { button.topLeft.round() }
-                    .size(button.width.toDp(), button.height.toDp())
-                    .mochiButtonGesture(trigger, controller, { button.topLeft + o }, callbacks)
-                    .graphicsLayer {
-                        val f = frame()
-                        scaleX = f.scale
-                        scaleY = f.scale
-                        // 从按钮组里脱出来时这一格的图标跟着组画（见上），克隆只留手势
-                        alpha = if (mergeGroup != null) {
-                            0f
-                        } else if (cover) {
-                            1f - smoothstep(0f, 0.25f, progress.value)
-                        } else {
-                            1f
+        // 2) 按钮克隆：和真按钮同位置同手势，包裹模式下内容淡出。
+        // 按钮归调用方时（[MochiDropdownMenu]）这里什么都不画，浮层只画面板
+        val clone = buttonContent
+        if (clone != null) {
+            with(density) {
+                Row(
+                    Modifier
+                        .offset { button.topLeft.round() }
+                        .size(button.width.toDp(), button.height.toDp())
+                        .mochiButtonGesture(trigger, controller, { button.topLeft + o }, callbacks)
+                        .graphicsLayer {
+                            val f = frame()
+                            scaleX = f.scale
+                            scaleY = f.scale
+                            // 从按钮组里脱出来时这一格的图标跟着组画（见上），克隆只留手势
+                            alpha = if (mergeGroup != null) {
+                                0f
+                            } else if (cover) {
+                                1f - smoothstep(0f, 0.25f, progress.value)
+                            } else {
+                                1f
+                            }
                         }
-                    }
-                    .padding(buttonPadding),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CompositionLocalProvider(LocalContentColor provides style.onButtonColor) { buttonContent() }
+                        .padding(buttonPadding),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CompositionLocalProvider(LocalContentColor provides style.onButtonColor) { clone() }
+                }
             }
         }
 
@@ -526,8 +590,9 @@ internal fun MochiOverlay(
                                     val canScroll = controller.maxScroll > 0f
                                     val caught = scroller.stop()
                                     if (!caught) {
-                                        callbacks.panelPressed(true)
+                                        // 按在禁用项上：不算按面板（不发光、不高亮），这一下什么都不选
                                         controller.track(origin2 + down.position)
+                                        if (!controller.onDisabled(origin2 + down.position)) callbacks.panelPressed(true)
                                     }
                                     down.consume()
                                     val tracker = VelocityTracker()
@@ -585,10 +650,56 @@ internal fun MochiOverlay(
                             },
                     ) {
                         if (content != null) {
-                            PanelContent(content, contentPadding, { contentHeight = it }, frame, target, effects, pivot)
+                            PanelContent(content, contentPadding, { contentHeight = it }, frame, target, effects, pivot) {
+                                callbacks.close()
+                            }
                             return@Box
                         }
-                        if (header != null) {
+                        if (inSubmenu) {
+                            // 子菜单的返回条：‹ + 父项标题，点它退回顶层（返回键也走这里）
+                            val rowStart = px.panelPadding.toDp() + if (ios) 12.dp else 16.dp
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = px.panelPadding.toDp())
+                                    .padding(horizontal = rowStart)
+                                    .height(SubmenuHeaderHeight)
+                                    .pointerInput(parentIndex) { detectTapGestures { onBack() } }
+                                    .semantics {
+                                        role = Role.Button
+                                        onClick {
+                                            onBack()
+                                            true
+                                        }
+                                    }
+                                    .graphicsLayer {
+                                        val f = frame()
+                                        val ev = effects().coerceIn(0f, 1f)
+                                        alpha = ev
+                                        translationX = f.panel.center.x - target.center.x
+                                        translationY = f.panel.center.y - target.center.y
+                                    }
+                                    .drawBehind {
+                                        drawRect(
+                                            dividerColor,
+                                            topLeft = Offset(0f, size.height - 1.dp.toPx()),
+                                            size = Size(size.width, 1.dp.toPx()),
+                                        )
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                MochiGlyphs.Chevron(style.onPanelColor, size = 16.dp, rotation = { 180f })
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    items[parentIndex].label,
+                                    style = MochiTheme.textStyles.bodyLarge,
+                                    color = style.onPanelColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        if (header != null && !inSubmenu) {
                             Text(
                                 header,
                                 style = headerStyle,
@@ -607,8 +718,8 @@ internal fun MochiOverlay(
                             )
                         }
                         MochiList(
-                            items = items,
-                            selectedIndex = selectedIndex,
+                            items = layerItems,
+                            selectedIndex = if (inSubmenu) -1 else selectedIndex,
                             style = style,
                             px = px,
                             motion = motion,
@@ -656,14 +767,14 @@ internal fun MochiOverlay(
                                 },
                         ) {
                             // 滚动条：贴在右侧内边距里的细胶囊，越界时被压短（和 iOS 一样）
-                            if (items.size * itemH > viewport) {
+                            if (layerItems.size * itemH > viewport) {
                                 Spacer(
                                     Modifier
                                         .fillMaxSize()
                                         .drawBehind {
                                             val a = barAlpha.value
                                             if (a <= 0.01f) return@drawBehind
-                                            val content = items.size * itemH
+                                            val content = layerItems.size * itemH
                                             val max = content - size.height
                                             val sc = controller.scroll
                                             val over = if (sc < 0f) {
@@ -707,26 +818,29 @@ private fun PanelContent(
     target: Rect,
     effects: () -> Float,
     pivot: TransformOrigin,
+    dismiss: () -> Unit,
 ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .onSizeChanged { onHeight(it.height.toFloat()) }
-            .padding(contentPadding)
-            .graphicsLayer {
-                val f = frame()
-                val ev = effects().coerceIn(0f, 1f)
-                alpha = ev
-                val s = 0.94f + 0.06f * ev
-                scaleX = s
-                scaleY = s
-                transformOrigin = pivot
-                translationX = f.panel.center.x - target.center.x
-                translationY = f.panel.center.y - target.center.y
-            },
-        content = body,
-    )
+    CompositionLocalProvider(LocalMochiDismiss provides dismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .onSizeChanged { onHeight(it.height.toFloat()) }
+                .padding(contentPadding)
+                .graphicsLayer {
+                    val f = frame()
+                    val ev = effects().coerceIn(0f, 1f)
+                    alpha = ev
+                    val s = 0.94f + 0.06f * ev
+                    scaleX = s
+                    scaleY = s
+                    transformOrigin = pivot
+                    translationX = f.panel.center.x - target.center.x
+                    translationY = f.panel.center.y - target.center.y
+                },
+            content = body,
+        )
+    }
 }
 
 /** 标题（操作确认的说明）左右离面板内边的距离 */
@@ -736,6 +850,9 @@ private val HeaderBottom = 6.dp
 
 /** 菜单上下边渐隐的长度 */
 private val MenuFadeExtent = 20.dp
+
+/** 子菜单返回条的高度（‹ + 父项标题，占的是菜单自己的 header 位） */
+private val SubmenuHeaderHeight = 40.dp
 
 /** 自动滚动速度：手指贴边一个选项高时每秒滚过几个选项 */
 private const val AutoScrollSpeed = 6f

@@ -22,7 +22,7 @@ MochiContextMenu(
 
 | 参数 | 说明 |
 |---|---|
-| items | 菜单项（和 MochiDropdown 共用 `MochiItem`：文字、警示色、图标） |
+| items | 菜单项（和 MochiDropdown 共用 `MochiItem`：文字、警示色、图标，逐项禁用 / 独立勾选 / 分隔线也照样生效；`children` 不展开） |
 | onItemClick | 选中回调 |
 | shape | 浮起时的阴影形状 |
 | enabled / hapticProfile | 开关、触感 |

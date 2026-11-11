@@ -1,6 +1,8 @@
 // Copyright 2026, mochi-compose contributors
 // SPDX-License-Identifier: Apache-2.0
 
+@file:Suppress("ktlint:compose:compositionlocal-allowlist") // LocalMochiDismiss：面板内容关自己的面板，只在面板内部提供
+
 package ui.feice.mochi.basic
 
 import android.provider.Settings
@@ -27,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -35,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -94,6 +98,15 @@ public data class MochiPopoverColors(
     val anchor: Color,
     val shadow: Color,
 )
+
+/**
+ * 面板内容里的关闭动作：弹出层的面板内部（[MochiPopoverButton]、[MochiPopoverBox]、下拉菜单的 `content` 模式）
+ * 都提供它，内容里的按钮不用再从外面拿闭包就能关掉面板（`AppAnchoredPanel` 这类「组件渲染触发器」的入口
+ * 拿不到调用方的 scope，只能这样拿）。
+ *
+ * 面板外没有意义，默认是空动作。
+ */
+public val LocalMochiDismiss: ProvidableCompositionLocal<() -> Unit> = staticCompositionLocalOf { {} }
 
 /** 弹出层的默认值 */
 public object MochiPopoverDefaults {
@@ -423,7 +436,7 @@ private fun PopoverOverlay(
                             translationY = f.panel.center.y - target.center.y
                         },
                 ) {
-                    CompositionLocalProvider(LocalContentColor provides colors.content) {
+                    CompositionLocalProvider(LocalContentColor provides colors.content, LocalMochiDismiss provides onDismiss) {
                         Column(
                             Modifier
                                 .fillMaxWidth()

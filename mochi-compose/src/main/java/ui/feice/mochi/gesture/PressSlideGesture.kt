@@ -167,10 +167,20 @@ internal class MochiController {
     /** 从按钮按住滑选中：手指贴近面板上下沿时列表自动滚动 */
     var autoScroll by mutableStateOf(false)
 
+    /** 这一项能不能选（禁用项仍占一行，但不高亮、不提交，按压的光也不亮） */
+    var isEnabled: (Int) -> Boolean = { true }
+
     fun track(p: Offset) {
         pointer = p
         touchOnScreen = p
-        hover = hitTest(p)
+        val h = hitTest(p)
+        hover = if (h >= 0 && isEnabled(h)) h else -1
+    }
+
+    /** [p] 是不是落在禁用的选项上（面板级按压发光要跳过这种位置） */
+    fun onDisabled(p: Offset): Boolean {
+        val i = hitTest(p)
+        return i >= 0 && !isEnabled(i)
     }
 
     private fun hitTest(p: Offset): Int {
@@ -192,6 +202,8 @@ internal class MochiCallbacks(
     val panelPressed: (Boolean) -> Unit,
     /** 长按触发时的轻点：给了就执行它（比如返回按钮的「返回」），不给就是轻点也打开菜单 */
     val tap: (() -> Unit)? = null,
+    /** 换子菜单层：-1 = 回顶层，其余是父项下标 */
+    val layer: (Int) -> Unit = {},
 )
 
 private enum class PressOutcome { Up, Moved }

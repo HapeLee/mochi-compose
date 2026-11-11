@@ -97,7 +97,7 @@ public fun MochiContextMenu(
         expanded = expanded,
         onExpandedChange = { expanded = it },
         onItemClick = onItemClick,
-        itemCount = items.size,
+        items = items,
         style = style,
         motion = menuMotion,
         dismissDelayMillis = behavior.dismissDelayMillis,

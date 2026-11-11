@@ -334,3 +334,10 @@ internal fun computeFrame(
 // ───────────────────────── 杂项 ─────────────────────────
 
 internal fun Offset.round() = IntOffset(x.roundToInt(), y.roundToInt())
+
+/**
+ * 锚点矩形从窗口坐标换成屏幕坐标：浮层（[ui.feice.mochi.overlay.InWindowOverlay]）挂在 DecorView 上按屏幕排版，
+ * 而调用方给的是 [androidx.compose.ui.layout.LayoutCoordinates.positionInWindow] / `boundsInWindow()` 的窗口坐标。
+ * [origin] 是窗口左上角在屏幕上的位置（见 [ui.feice.mochi.utils.windowOriginOnScreen]）。
+ */
+internal fun IntRect.onScreen(origin: Offset): Rect = Rect(left + origin.x, top + origin.y, right + origin.x, bottom + origin.y)

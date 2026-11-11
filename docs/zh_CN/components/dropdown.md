@@ -4,12 +4,14 @@
 
 - `MochiDropdown`：文字胶囊按钮，默认分离模式（面板在按钮外长出来，中间有融球颈）
 - `MochiIconDropdown`：圆形图标按钮（⋯、+），默认包裹模式（按钮整个变成面板）、右对齐
+- `MochiDropdownMenu`：只有锚点，按钮由调用方自己画（见「只有锚点：按钮自己画」）
 
 ## 引入
 
 ```kotlin
 import ui.feice.mochi.basic.MochiDropdown
 import ui.feice.mochi.basic.MochiIconDropdown
+import ui.feice.mochi.basic.MochiDropdownMenu
 import ui.feice.mochi.basic.MochiItem
 import ui.feice.mochi.basic.MochiDropdownDefaults
 ```
@@ -50,6 +52,86 @@ MochiIconDropdown(
 }
 ```
 
+## 逐项禁用、独立勾选、分组
+
+菜单项不必每次重新拼：`MochiItem` 的 `id` / `enabled` / `checked` / `dividerBefore` / `groupTitleBefore` 让同一组操作可以长期存在、只改状态。行高、面板高度和滚动量都不变，`onItemClick` 仍是被点那一项的下标。
+
+```kotlin
+MochiIconDropdown(
+    expanded = moreOpen,
+    onExpandedChange = { moreOpen = it },
+    items = persistentListOf(
+        MochiItem("拷贝链接", id = "copy"),
+        MochiItem("置顶", id = "pin", checked = pinned),              // 独立开关：显示勾选圈，不铺选中底色
+        MochiItem("重命名", id = "rename", dividerBefore = true),     // 行顶一条分隔线，不占额外高度
+        MochiItem("分享", id = "share", groupTitleBefore = "协作"),    // 行内上方的小标题，仍是一行
+        MochiItem("导出为 PDF", id = "pdf", enabled = false),          // 禁用：仍占一行，滑过不高亮、点了不回调
+        MochiItem("删除", id = "delete", destructive = true),
+    ),
+    onItemClick = { /* … */ },
+) { MoreDots() }
+```
+
+- `id` 稳定时行按它复用：菜单项重新排序不会把逐项错开出现的动画和状态串到别的项上
+- `enabled = false` 的项在无障碍树里是 disabled，语义点击也不会触发 `onItemClick`
+- `checked` 与 `selectedIndex` 可以并存：勾那一列只留一次，选中底色只由 `selectedIndex` 决定
+- `commitAfterDismiss = true`：先收起菜单，等收起动画结束再回调 `onItemClick`。切换根主题、重建整棵界面这类「浮层还挂着就不能做」的操作要开它（默认 `false` 仍然是先回调、150ms 后收起）
+
+## 一层子菜单
+
+`MochiItem.children` 给一层子菜单，子项点击走 `onChildClick(parent, child)`；父项自己不会被选中，点它就是换层：
+
+```kotlin
+MochiIconDropdown(
+    expanded = moreOpen,
+    onExpandedChange = { moreOpen = it },
+    items = persistentListOf(
+        MochiItem("拷贝链接", id = "copy"),
+        MochiItem(
+            "分享", id = "share",
+            children = persistentListOf(
+                MochiItem("复制分享链接", id = "share-copy"),
+                MochiItem("导出 PDF", id = "share-pdf"),
+            ),
+        ),
+    ),
+    onItemClick = { /* 顶层项 */ },
+    onChildClick = { parent, child -> /* parent = 0，child = 0 / 1 */ },
+) { MoreDots() }
+```
+
+- 只支持两层：子菜单里的项再带 `children` 不展开
+- 子菜单顶部是返回条（‹ + 父项标题），点它或按返回键退回顶层；面板高度按子项个数重算
+- 换层时子菜单从顶部开始滚，退回顶层回到原来的位置，内容重新显影一次
+- 没给 `onChildClick` 时带 `children` 的项按普通项处理（点它触发 `onItemClick`），避免出现点了没反应的入口
+- `MochiContextMenu` 没有 `onChildClick`，它的项里 `children` 不展开
+
+## 只有锚点：按钮自己画
+
+按钮不归库时（项目自己的顶栏按钮、图标按钮、任意自定义控件）用 `MochiDropdownMenu`：它不渲染按钮，只把同一个菜单浮层挂在锚点矩形上。点击、长按、按压反馈都由调用方自己接，`expanded` 完全外部受控。
+
+```kotlin
+var expanded by remember { mutableStateOf(false) }
+var bounds by remember { mutableStateOf(IntRect.Zero) }
+
+Box(Modifier.onGloballyPositioned { bounds = it.boundsInWindow().roundToIntRect() }) {
+    TopBarActionButton(onClick = { expanded = true }, imageVector = Icons.MoreVert, contentDescription = "更多")
+    MochiDropdownMenu(
+        anchorBounds = bounds,                 // 窗口坐标，库自己换算到屏幕
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        items = items,
+        onItemClick = { /* … */ },
+    )
+}
+```
+
+- 面板、选项、子菜单、动画、滚动、触感、返回键与 `MochiDropdown` 是同一个引擎，外观和手感一致
+- 浮层里不画按钮的克隆，也没有「按下即开」和按住滑选：按钮既然归调用方，这一下按压就归按钮
+- 默认不连融球颈（锚点不归库画，库不知道它的底色）。要按钮「流出」面板那种效果就传 `anchorColor = 按钮底色`，颈从它渐变到面板色
+- 面板宽度按 `menuWidth` 排版，不跟锚点等宽；`behavior.openMode = Cover` 时面板第一帧就是锚点大小（圆角取 `anchorCornerRadius`）再铺开
+- `anchorBounds` 没量到（`IntRect.Zero`）之前别展开，否则面板从屏幕左上角长出来
+
 ## 属性
 
 ### MochiDropdown
@@ -60,6 +142,7 @@ MochiIconDropdown(
 | onExpandedChange | `(Boolean) -> Unit` | 展开 / 收起的请求 | 必填 |
 | items | `ImmutableList<MochiItem>` | 菜单项 | 必填 |
 | onItemClick | `(Int) -> Unit` | 选中某项（选中后会自动收起） | 必填 |
+| onChildClick | `((Int, Int) -> Unit)?` | 子菜单项点击（父项下标, 子项下标）；给了才展开 `children` | `null` |
 | modifier | `Modifier` | 作用在按钮上 | `Modifier` |
 | enabled | `Boolean` | 是否可用，不可用时按钮半透明且不响应手势 | `true` |
 | selectedIndex | `Int` | 选中项下标，-1 = 操作菜单 | `-1` |
@@ -71,6 +154,7 @@ MochiIconDropdown(
 | buttonPadding | `PaddingValues` | 按钮内边距 | `MochiDropdownDefaults.ButtonPadding` |
 | buttonMinWidth | `Dp` | 按钮最小宽度 | `0.dp` |
 | buttonMinHeight | `Dp` | 按钮最小高度 | `MochiDropdownDefaults.ButtonMinHeight` |
+| commitAfterDismiss | `Boolean` | 选中后先收起菜单，等收起动画结束再回调 `onItemClick` | `false` |
 | buttonContent | `@Composable RowScope.() -> Unit` | 按钮内容，`LocalContentColor` 已设为按钮前景色 | 必填 |
 
 ### MochiIconDropdown
@@ -85,6 +169,19 @@ MochiIconDropdown(
 | size | `Dp` | 圆形按钮直径 | `MochiDropdownDefaults.IconButtonSize` |
 | icon | `@Composable () -> Unit` | 图标 | 必填 |
 
+### MochiDropdownMenu
+
+菜单项、颜色、行为、形变、动画、`commitAfterDismiss`、`onChildClick` 都与 `MochiDropdown` 相同，区别：
+
+| 参数 | 类型 | 说明 | 默认值 |
+|---|---|---|---|
+| anchorBounds | `IntRect` | 锚点矩形（**窗口坐标**，库自己换算到屏幕） | 必填 |
+| menuWidth | `Dp` | 面板宽度，不跟锚点等宽 | `MochiDropdownDefaults.MenuWidth` |
+| anchorCornerRadius | `Dp` | 锚点圆角，展开第一帧面板的形状从它开始 | `MochiDropdownDefaults.ButtonCornerRadius` |
+| anchorColor | `Color` | 锚点那一端的颜色（融球颈）；`Color.Unspecified` = 不连颈 | `Color.Unspecified` |
+
+没有 `modifier` / `enabled` / `buttonPadding` / `buttonMinWidth` / `buttonMinHeight` / `onClick` / `buttonContent`：按钮不在库里，前两项由调用方的按钮自己管（`expanded = expanded && enabled`）。
+
 ### MochiItem
 
 | 属性 | 类型 | 说明 | 默认值 |
@@ -92,6 +189,12 @@ MochiIconDropdown(
 | label | `String` | 文字 | 必填 |
 | destructive | `Boolean` | 危险项（用 error 色） | `false` |
 | icon | `(@Composable (tint: Color) -> Unit)?` | 图标插槽，参数是当前文字颜色 | `null` |
+| id | `String?` | 稳定 ID：行按它复用，顺序变了不串状态 | `null` |
+| enabled | `Boolean` | 逐项禁用（仍占一行，不高亮、不提交） | `true` |
+| checked | `Boolean?` | 独立开关的勾选态（null = 普通项），显示勾选圈 | `null` |
+| dividerBefore | `Boolean` | 行顶画一条分隔线，不额外占高 | `false` |
+| groupTitleBefore | `String?` | 行内上方的小标题，不额外占一行高 | `null` |
+| children | `ImmutableList<MochiItem>` | 一层子菜单（需要 `onChildClick` 才展开） | `persistentListOf()` |
 
 ### MochiDropdownBehavior
 
@@ -188,6 +291,6 @@ MochiIconDropdown(
 | 按住滑选 + 形变 | ✅ | 高亮块上下两条边是快慢两根弹簧，滑动时被拉长、横向收窄；拖出面板有橡皮筋（iOS 滚动回弹公式 + 每帧积分的弹簧，手指一直动也连续跟随） |
 | 底部不裁切 | ✅ | 浮层挂在当前 Activity 的 DecorView 上（同一窗口），不用 Popup 子窗口，导航栏区域也能画 |
 | 锐利 | ✅ | AGSL 在像素坐标里算；本体边缘由路径抗锯齿 |
-| 还没还原 | ⏳ | 玻璃的折射 / 透镜（刻意用 MD3E 替代）、阴影随背后内容自动调深浅、子菜单、顶部小图标横排 |
+| 还没还原 | ⏳ | 玻璃的折射 / 透镜（刻意用 MD3E 替代）、阴影随背后内容自动调深浅、键盘上下键在菜单里移动、顶部小图标横排 |
 
 苹果没公开菜单的弹簧参数和震动时机，这两样目前都是按手感估的。

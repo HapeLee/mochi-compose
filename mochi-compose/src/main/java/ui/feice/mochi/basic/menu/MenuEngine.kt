@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import ui.feice.mochi.anim.MochiMotion
 import ui.feice.mochi.anim.MochiMotions
 import ui.feice.mochi.basic.BarGroupHandle
@@ -68,6 +71,8 @@ internal class MochiEngine(
     val glow: MochiGlowState,
     val callbacks: MochiCallbacks,
     val elastic: Float,
+    /** 子菜单层：-1 = 顶层，其余是正在展开子菜单的父项下标 */
+    val submenu: MutableIntState,
 ) {
     /** 浮层在不在（关闭动画途中还在） */
     var overlayVisible by mutableStateOf(false)
@@ -76,23 +81,37 @@ internal class MochiEngine(
     /** 浮层已经接手画按钮（原按钮可以藏起来了） */
     var overlayReady by mutableStateOf(false)
         internal set
+
+    /** 这一层要显示的项（[items] 是顶层列表），见 [menuLayer] */
+    fun layer(items: List<MochiItem>): List<MochiItem> = menuLayer(items, submenu.intValue)
 }
+
+/**
+ * 子菜单只支持两层：[parent] = -1 是顶层 [items]，否则是那一项的 children。
+ * 子项自带的 children 不展开（不会出现第三层）。
+ */
+internal fun menuLayer(items: List<MochiItem>, parent: Int): List<MochiItem> =
+    if (parent in items.indices) items[parent].children else items
 
 /**
  * @param anchorSize 锚点（按钮 / 卡片）此刻的大小，按它算按钮上的光有多大
  * @param onTap 长按触发时的轻点动作；null = 轻点也打开菜单
+ * @param onChildClick 子菜单项的点击（父项下标, 子项下标）；给了才允许展开 children
+ * @param commitAfterDismiss 选中后先关菜单、等收起动画结束再回调 [onItemClick]（切换根主题这类不能在浮层还在时做的事）
  */
 @Composable
 internal fun rememberMochiEngine(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onItemClick: (Int) -> Unit,
-    itemCount: Int,
+    items: List<MochiItem>,
     style: MochiStyle,
     motion: MochiMotion,
     dismissDelayMillis: Long,
     anchorSize: () -> Size,
     onTap: (() -> Unit)? = null,
+    onChildClick: ((Int, Int) -> Unit)? = null,
+    commitAfterDismiss: Boolean = false,
 ): MochiEngine {
     val progress = remember { Animatable(0f) }
     val effects = remember { Animatable(0f) }
@@ -110,10 +129,17 @@ internal fun rememberMochiEngine(
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
 
-    controller.itemCount = itemCount
+    // 子菜单层：-1 = 顶层。读它让换层时这一处重组，itemCount / isEnabled 跟着新的一层走
+    val submenu = remember { mutableIntStateOf(-1) }
+
+    fun layer(): List<MochiItem> = menuLayer(items, submenu.intValue)
+
+    controller.itemCount = layer().size
     controller.itemHeightPx = with(density) { style.itemHeight.toPx() }
     controller.paddingPx = with(density) { style.panelPadding.toPx() }
     controller.contentReady = { effects.value > 0.3f }
+    // 手势和语义点击都按「当前这一层」判断禁用
+    controller.isEnabled = { i -> layer().getOrNull(i)?.enabled != false }
 
     val currentExpanded by rememberUpdatedState(expanded)
     val currentOnExpandedChange by rememberUpdatedState(onExpandedChange)
@@ -122,7 +148,23 @@ internal fun rememberMochiEngine(
     val currentDismissDelay by rememberUpdatedState(dismissDelayMillis)
     val currentPressStyle by rememberUpdatedState(style.pressStyle)
     val currentOnTap by rememberUpdatedState(onTap)
+    val currentChildClick by rememberUpdatedState(onChildClick)
+    val currentCommitAfterDismiss by rememberUpdatedState(commitAfterDismiss)
     val currentAnchorSize by rememberUpdatedState(anchorSize)
+    val currentMotion by rememberUpdatedState(motion)
+
+    /** 换层（[next] = -1 回顶层）：清掉滑选状态，滚动从头开始（见浮层里的分层的滚动复位），内容再显影一次 */
+    fun showLayer(next: Int) {
+        if (submenu.intValue == next) return
+        submenu.intValue = next
+        controller.hover = -1
+        controller.pointer = null
+        controller.autoScroll = false
+        scope.launch {
+            effects.snapTo(0f)
+            effects.animateTo(1f, currentMotion.openEffects)
+        }
+    }
     // 光的扩散范围跟着元素大小走（MochiGlowDefaults.radius）：按钮上按按钮算，面板里按面板算
     val anchorGlow = { MochiGlowDefaults.radius(currentAnchorSize(), density) }
     val panelGlowPx = { MochiGlowDefaults.radius(controller.panelOnScreen.size, density) }
@@ -137,11 +179,34 @@ internal fun rememberMochiEngine(
             },
             close = { currentOnExpandedChange(false) },
             select = { i ->
+                val parent = submenu.intValue
+                val item = layer().getOrNull(i)
+                // 手势路径已经过滤过禁用项，语义点击（无障碍 / 键盘）这条也要兜住
+                if (item == null || !item.enabled) return@MochiCallbacks
+                val child = currentChildClick
+                // 顶层带 children 的项是子菜单入口：不选中、不收起，换成子菜单那一层
+                if (parent < 0 && item.children.isNotEmpty() && child != null) {
+                    currentHaptics.tick()
+                    showLayer(i)
+                    return@MochiCallbacks
+                }
                 currentHaptics.confirm()
-                currentOnItemClick(i)
-                scope.launch {
-                    delay(currentDismissDelay)
+                val deliver = {
+                    if (parent >= 0) child?.invoke(parent, i) else currentOnItemClick(i)
+                }
+                if (currentCommitAfterDismiss) {
+                    // 先关菜单，等收起动画把浮层从 DecorView 上摘掉再回调：回调里重建根主题不会撞上还挂着的浮层
                     currentOnExpandedChange(false)
+                    scope.launch {
+                        withTimeoutOrNull(1000) { snapshotFlow { progress.value }.first { it <= 0.001f } }
+                        deliver()
+                    }
+                } else {
+                    deliver()
+                    scope.launch {
+                        delay(currentDismissDelay)
+                        currentOnExpandedChange(false)
+                    }
                 }
             },
             pressed = { down ->
@@ -169,15 +234,18 @@ internal fun rememberMochiEngine(
                 }
             },
             tap = if (onTap == null) null else ({ currentOnTap?.invoke() }),
+            layer = { next -> showLayer(next) },
         )
     }
     val engine = remember(style, callbacks) {
-        MochiEngine(style, controller, progress, effects, press, glow, callbacks, if (reduceMotion) 0f else 1f)
+        MochiEngine(style, controller, progress, effects, press, glow, callbacks, if (reduceMotion) 0f else 1f, submenu)
     }
 
     LaunchedEffect(expanded, motion) {
         if (expanded) {
             if (!engine.overlayVisible) {
+                // 每次打开都从顶层开始
+                submenu.intValue = -1
                 controller.hover = -1
                 effects.snapTo(0f)
             }
@@ -222,14 +290,19 @@ internal fun rememberMochiEngine(
         snapshotFlow { controller.hover }.collect { if (it >= 0) currentHaptics.tick() }
     }
 
-    // 浮层挂在同一窗口里，不抢焦点（抢焦点可能打断正在进行的按住手势），返回键在这里处理
-    BackHandler(enabled = expanded) { currentOnExpandedChange(false) }
+    // 浮层挂在同一窗口里，不抢焦点（抢焦点可能打断正在进行的按住手势），返回键在这里处理：
+    // 在子菜单层先退回顶层，顶层再关菜单
+    BackHandler(enabled = expanded) {
+        if (submenu.intValue >= 0) callbacks.layer(-1) else currentOnExpandedChange(false)
+    }
     return engine
 }
 
 /**
  * 菜单浮层（打开期间挂在窗口上）。锚点是按钮时 [anchorContent] 是按钮的内容；锚点是长按预览的卡片时，
  * [anchorContent] 是卡片本身、[scrim] 给背景压暗、[matchAnchorWidth] = false（面板不跟卡片一样宽）。
+ * [anchorContent] 为 null 时浮层里不画锚点这一端（按钮归调用方，比如 [ui.feice.mochi.basic.MochiDropdownMenu]），
+ * [singleBlob] 让面板只有自己一块身体、不和锚点连融球颈。
  */
 @Composable
 internal fun MochiEngine.Overlay(
@@ -246,7 +319,8 @@ internal fun MochiEngine.Overlay(
     content: (@Composable ColumnScope.() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     group: BarGroupHandle? = null,
-    anchorContent: @Composable RowScope.() -> Unit,
+    singleBlob: Boolean = false,
+    anchorContent: (@Composable RowScope.() -> Unit)? = null,
 ) {
     if (!overlayVisible) return
     InWindowOverlay(leaving = { !callbacks.isExpanded() }) {
@@ -260,6 +334,8 @@ internal fun MochiEngine.Overlay(
             callbacks = callbacks,
             trigger = trigger,
             items = items,
+            parentIndex = submenu.intValue,
+            onBack = { callbacks.layer(-1) },
             selectedIndex = selectedIndex,
             style = style,
             motion = motion,
@@ -274,6 +350,7 @@ internal fun MochiEngine.Overlay(
             contentPadding = contentPadding,
             group = group,
             buttonContent = anchorContent,
+            singleBlob = singleBlob,
         )
     }
 }

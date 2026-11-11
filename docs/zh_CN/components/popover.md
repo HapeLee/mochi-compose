@@ -21,6 +21,15 @@ MochiPopoverButton(
 - **`MochiPopoverBox` 只用于锚点不是按钮的情况**（程序主动弹出的提示、自定义控件）：锚点不归它管，所以没有按压反馈和融色
 - 面板里放的是一串选项时，不要用弹出层再自己摆 `MochiListRow`，直接用 `MochiDropdown` / `MochiIconDropdown`：选项的高亮块、按住滑选、滑过轻震都是菜单引擎提供的
 
+面板里的内容想关掉面板，读 `LocalMochiDismiss`（面板内部已经提供，等于 `onExpandedChange(false)`）；`MochiDropdown` 的 `content` 模式也提供同一个值：
+
+```kotlin
+MochiPopoverButton(expanded, { open = it }, popover = {
+    val dismiss = LocalMochiDismiss.current
+    MochiButton({ dismiss() }) { Text("知道了") }
+}) { Text("显示详情") }
+```
+
 `MochiPopoverBox` 的行为：
 
 - 默认出现在锚点下面，下面放不下、上面更宽裕时翻到上面；横向按 `align` 对齐锚点，再夹在屏幕边距里

@@ -42,15 +42,22 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.roundToIntRect
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.delay
 import ui.feice.mochi.anim.MochiMotions
 import ui.feice.mochi.basic.MochiAlign
+import ui.feice.mochi.basic.MochiButton
+import ui.feice.mochi.basic.MochiButtonStyle
 import ui.feice.mochi.basic.MochiDropdown
 import ui.feice.mochi.basic.MochiDropdownBehavior
 import ui.feice.mochi.basic.MochiDropdownDefaults
+import ui.feice.mochi.basic.MochiDropdownMenu
 import ui.feice.mochi.basic.MochiIconDropdown
 import ui.feice.mochi.basic.MochiItem
 import ui.feice.mochi.basic.MochiItemLayout
@@ -78,12 +85,13 @@ import ui.feice.mochi.theme.emphasized
 import ui.feice.mochi.utils.MochiHapticProfile
 
 /**
- * 选择列表演示：一屏四个场景
+ * 选择列表演示：一屏五个场景
  * - 左上 文字胶囊：动画曲线选择（单选，分离模式）
- * - 右上 ⋯ 圆形按钮：操作菜单（包裹模式，带图标和危险项）
+ * - 右上 ⋯ 圆形按钮：操作菜单（包裹模式，带图标、独立勾选「置顶」、分隔线、行内分组小标题和危险项）
  * - 第二行 排序胶囊：自动选择展开方向的单选
  * - 第二行 + FAB：操作菜单
- * 都支持按住直接滑到选项上松手选中。
+ * - 第三行「按钮归我」：按钮自己画，菜单只拿锚点矩形（`MochiDropdownMenu`，没有库按钮、没有按住滑选）
+ * 前四个场景都支持按住直接滑到选项上松手选中。
  */
 @Composable
 fun DropdownPage(entry: CatalogEntry, modifier: Modifier = Modifier) {
@@ -97,6 +105,7 @@ fun DropdownPage(entry: CatalogEntry, modifier: Modifier = Modifier) {
     var gel by rememberSaveable { mutableFloatStateOf(0.6f) }
     var pressStyle by remember { mutableStateOf(MochiPressStyle.Grow) }
     var longList by rememberSaveable { mutableStateOf(false) }
+    var pinned by rememberSaveable { mutableStateOf(false) }
     var layout by remember { mutableStateOf(MochiItemLayout.Material) }
     var haptic by remember { mutableStateOf(MochiHapticProfile.IosLike) }
     var rubberMax by rememberSaveable { mutableFloatStateOf(72f) }
@@ -160,13 +169,44 @@ fun DropdownPage(entry: CatalogEntry, modifier: Modifier = Modifier) {
                             expanded = open == "more",
                             onExpandedChange = { open = if (it) "more" else null },
                             items = persistentListOf(
-                                MochiItem("拷贝链接", icon = { Glyph(Icons.LINK, it) }),
-                                MochiItem("置顶", icon = { Glyph(Icons.PIN, it) }),
-                                MochiItem("重命名", icon = { Glyph(Icons.EDIT, it) }),
-                                MochiItem("分享", icon = { Glyph(Icons.SHARE, it) }),
-                                MochiItem("删除", destructive = true, icon = { Glyph(Icons.TRASH, it) }),
+                                MochiItem("拷贝链接", id = "copy", icon = { Glyph(Icons.LINK, it) }),
+                                // 独立开关：显示勾选圈，和单选菜单的选中态无关
+                                MochiItem("置顶", id = "pin", checked = pinned, icon = { Glyph(Icons.PIN, it) }),
+                                // 行顶分隔线 + 行内分组小标题，都不额外占行高
+                                MochiItem("重命名", id = "rename", dividerBefore = true, icon = { Glyph(Icons.EDIT, it) }),
+                                // 一层子菜单：点这一项换成子菜单那一层，返回条 / 返回键回到顶层
+                                MochiItem(
+                                    "分享",
+                                    id = "share",
+                                    groupTitleBefore = "协作",
+                                    icon = { Glyph(Icons.SHARE, it) },
+                                    children = persistentListOf(
+                                        MochiItem("复制链接", id = "share-copy"),
+                                        MochiItem("导出 PDF", id = "share-pdf"),
+                                    ),
+                                ),
+                                MochiItem("删除", id = "delete", destructive = true, icon = { Glyph(Icons.TRASH, it) }),
                             ),
-                            onItemClick = { toast.show(listOf("已拷贝链接", "已置顶", "进入重命名", "打开分享面板", "已移到回收站")[it]) },
+                            onItemClick = {
+                                when (it) {
+                                    1 -> {
+                                        pinned = !pinned
+                                        toast.show(if (pinned) "已置顶" else "已取消置顶")
+                                    }
+
+                                    // 带 children 的项点下去是换层，正常选不到这里
+                                    3 -> Unit
+
+                                    else -> toast.show(
+                                        listOf("已拷贝链接", "", "进入重命名", "", "已移到回收站")[it],
+                                    )
+                                }
+                            },
+                            onChildClick = { parent, child ->
+                                if (parent == 3) {
+                                    toast.show(if (child == 0) "已复制分享链接" else "正在导出 PDF")
+                                }
+                            },
                             modifier = Modifier,
                             behavior = behavior(MochiOpenMode.Cover, MochiAlign.End),
                             physics = physics,
@@ -217,6 +257,33 @@ fun DropdownPage(entry: CatalogEntry, modifier: Modifier = Modifier) {
                             motion = motion,
                             size = 56.dp,
                         ) { Glyph(Icons.PLUS, LocalContentColor.current, size = 24) }
+                    }
+
+                    // 第三行：按钮完全自己画，菜单只从锚点长出来（MochiDropdownMenu 不渲染按钮）
+                    var anchoredOpen by remember { mutableStateOf(false) }
+                    var anchoredBounds by remember { mutableStateOf(IntRect.Zero) }
+                    Box(
+                        Modifier.onGloballyPositioned {
+                            anchoredBounds = it.boundsInWindow().roundToIntRect()
+                        },
+                    ) {
+                        MochiButton(
+                            onClick = { anchoredOpen = true },
+                            style = MochiButtonStyle.Tonal,
+                            modifier = Modifier.height(40.dp),
+                        ) {
+                            Text("按钮归我", style = ts.labelLarge)
+                        }
+                        MochiDropdownMenu(
+                            anchorBounds = anchoredBounds,
+                            expanded = anchoredOpen,
+                            onExpandedChange = { anchoredOpen = it },
+                            items = persistentListOf(MochiItem("移到顶部"), MochiItem("移到底部")),
+                            onItemClick = { toast.show(listOf("已移到顶部", "已移到底部")[it]) },
+                            behavior = behavior(MochiOpenMode.Detach),
+                            physics = physics,
+                            motion = motion,
+                        )
                     }
                 }
             }
