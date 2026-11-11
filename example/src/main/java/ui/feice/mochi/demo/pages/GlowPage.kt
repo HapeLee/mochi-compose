@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.compositeOver
@@ -73,6 +74,15 @@ fun GlowPage(entry: CatalogEntry, modifier: Modifier = Modifier) {
     val spec = remember(base, strength) { MochiGlowSpec(color = base.copy(alpha = strength)) }
 
     DemoPage(entry, modifier) {
+        demoItem {
+            DemoSection("主题默认反馈", footer = "只有高光，不缩放或移动；点击节点直接继承 MochiTheme 的 Indication。") {
+                Text(
+                    "按住查看高光",
+                    modifier = Modifier.clip(CircleShape).background(cs.surfaceContainerHighest)
+                        .clickable(onClick = {}).padding(horizontal = 24.dp, vertical = 16.dp),
+                )
+            }
+        }
         demoItem {
             DemoSection("控制中心", footer = "按住任意一块并拖动，光从手指处亮起、带阻尼地跟着走；点一下切换。大块的光更大更柔，圆按钮的光收得更紧。") {
                 ControlCenter(spec)

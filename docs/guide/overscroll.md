@@ -13,9 +13,15 @@
 
 ## Usage
 
+`MochiTheme` already provides `MochiOverscrollFactory`; ordinary lazy lists and scroll modifiers do
+not need an extra provider. Place ProvideMochiOverscroll inside the theme for local parameters.
+Explicit effects and `LocalOverscrollFactory provides null` still override or disable the default.
+The theme does not replace fling behavior: custom scrollers still select `MochiScrollDefaults.flingBehavior()`.
+Short/empty content input and nested-scroll containment remain the container's responsibility.
+
 ```kotlin
 ProvideMochiOverscroll {
-    App()
+    App() // Local override; the theme already provides this engine by default
 }
 
 LazyColumn(

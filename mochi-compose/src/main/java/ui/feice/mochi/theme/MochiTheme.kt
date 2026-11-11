@@ -6,6 +6,8 @@ package ui.feice.mochi.theme
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -17,6 +19,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import ui.feice.mochi.effect.glow.MochiGlowDefaults
+import ui.feice.mochi.effect.glow.MochiGlowIndication
+import ui.feice.mochi.effect.overscroll.MochiOverscrollFactory
 
 /**
  * 组件库主题：MD3 Expressive 的配色 / 字阶 / 形状 / 动效。
@@ -36,6 +41,7 @@ import androidx.compose.ui.text.TextStyle
  * 玻璃、模糊的配方在 mochi-ios 里（`iosMaterials(isDark, glass = …, blur = …)`），默认纯色（[MochiMaterials] 的默认值）。
  * [shadows] 是阴影档位表（[MochiShadows]），组件只选档位，换一套就整体换阴影风格。
  * 组件都从主题读这些，应用里不需要按主题、按开关分别写组件。
+ * 普通 clickable 默认得到无形变的高光，滚动容器默认得到越界回弹；按钮专用动效与 flingBehavior 独立。
  */
 @Composable
 public fun MochiTheme(
@@ -114,7 +120,12 @@ public fun MochiTheme(
     MochiHdrWindowEffect()
     MochiGraphicsWindowEffect()
     if (systemBarAppearance) MochiSystemBarsEffect(colors.isDark)
+    val glowSpec = MochiGlowDefaults.spec(Color.White.copy(alpha = if (colors.isDark) 0.22f else 0.45f))
+    val indication = remember(glowSpec) { MochiGlowIndication(glowSpec) }
+    val overscrollFactory = remember { MochiOverscrollFactory() }
     CompositionLocalProvider(
+        LocalIndication provides indication,
+        LocalOverscrollFactory provides overscrollFactory,
         LocalMochiColorScheme provides colors,
         LocalMochiTextStyles provides textStyles,
         LocalMochiShapes provides shapes,

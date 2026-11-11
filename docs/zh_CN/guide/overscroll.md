@@ -13,9 +13,15 @@
 
 ## 用法
 
+`MochiTheme` 已默认提供 `MochiOverscrollFactory`，普通 Lazy 列表和滚动 Modifier 无需再包
+ProvideMochiOverscroll。需要局部修改参数时，把该 provider 放在 MochiTheme 内层；显式 effect
+和 `LocalOverscrollFactory provides null` 仍分别用于局部覆盖和禁用。
+Theme 不替换普通惯性，`MochiScrollDefaults.flingBehavior()` 仍需由自定义滚动容器显式选择；
+短内容、空内容是否接收拖动由容器决定，嵌套区域的 containment 也需要显式装配。
+
 ```kotlin
 ProvideMochiOverscroll {
-    App()
+    App() // 局部覆盖；默认主题已提供同一引擎
 }
 
 LazyColumn(

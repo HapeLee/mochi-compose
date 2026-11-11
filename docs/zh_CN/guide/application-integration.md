@@ -8,7 +8,7 @@
 
 | 场景 | 必用能力与接入方式 | 常见漏项 |
 |---|---|---|
-| 应用根部 | `MochiTheme` 提供主题（配色、控件配色、材质都在根部给一次，见下面「主题接入」；最外层主题自动让状态栏、导航栏图标跟着明暗走）；`ProvideMochiOverscroll` 包住滚动内容；`rememberMochiNavigator` + `MochiNavHost` 管理 Mochi 页面栈 | 只替换按钮，其他页面仍用默认 Material 外观；导航容器不在主题里 |
+| 应用根部 | `MochiTheme` 提供配色、字阶、材质、默认点击高光与越界回弹（最外层主题也管理系统栏图标）；`ProvideMochiOverscroll` 仅用于主题内局部覆盖；`rememberMochiNavigator` + `MochiNavHost` 管理 Mochi 页面栈 | 只替换按钮；导航容器不在主题里；把 Theme 当成已接入自定义惯性或高级按钮形变 |
 | 大标题、搜索、下拉刷新 | `MochiLargeTitleScaffold`、`MochiSearchBar`；按业务提供挂起的 `onRefresh` | 自画顶栏遗漏折叠标题、边缘效果或刷新；重复包一层竖向滚动 |
 | 正文有卡片外分组小标题 | 如「配色」「主题色板」，默认用 `MochiCompactTitleScaffold`（已有滚动容器用 `MochiTitleBar`），移除独立大标题与空占位，保留分组小标题；仅独立顶栏需正文预留状态栏 + 顶栏高度；介绍卡片内标题保留 | 按说明文字或卡片有无判断；误删分组标题；重复安全区 |
 | 长页面（一屏放不下） | `MochiLazyLargeTitleScaffold` / `MochiLazyCompactTitleScaffold` 或 `LazyColumn` + `MochiTitleBar`，每个分组一项，行很多的分组用 `mochiListSection`（每行一项、看起来仍是一张卡片），项内可改状态用 `rememberSaveable`；页面里嵌的滚动区域挂 `mochiContainedScroll` | 长页面用 `Column` + `verticalScroll`，滚动卡在主线程；整页塞进一项；一行套一张卡片；项里状态用 `remember`，滑回来丢了 |

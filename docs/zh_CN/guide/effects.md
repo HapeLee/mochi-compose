@@ -5,12 +5,31 @@
 | 效果 | 包 | 主要 API |
 |---|---|---|
 | 卡片高度 | `ui.feice.mochi.effect.content` | `Modifier.mochiAnimateHeight`，卡片默认开启 |
-| 按压高光 | `ui.feice.mochi.effect.glow` | `rememberMochiGlowState`、`Modifier.mochiPressGlow`、`Modifier.mochiGlow` |
+| 按压高光 | `ui.feice.mochi.effect.glow` | `MochiGlowIndication`、`rememberMochiGlowState`、`Modifier.mochiPressGlow`、`Modifier.mochiGlow` |
 | 形变 | `ui.feice.mochi.effect.elastic` | `rubberBand`、`rememberMochiRubberBandState`、`Modifier.mochiRubberBand`、`Modifier.mochiJelly`、`MochiFollowSpring` |
 | 融球连接 | `ui.feice.mochi.effect.metaball` | `rememberMochiMetaballRenderer`、`DrawScope.drawMochiMetaball`、`proximityFuse` |
 | 内容变换 | `ui.feice.mochi.effect.content` | `MochiMorphIcon`、`MochiBlurText`、`MochiBlurVisibility`、`MochiCounterText`、`MochiBlurCrossfade`，见[内容变换](content-transitions.md) |
 | HDR 高光（实验性） | `ui.feice.mochi.effect.hdr` | `MochiHdr`、`MochiHdrPalette`、`MochiEdgeGlow`，见[HDR 高光](hdr.md) |
 | 越界回弹 | `ui.feice.mochi.effect.overscroll` | `ProvideMochiOverscroll`、`rememberMochiOverscrollEffect`、`MochiScrollDefaults.flingBehavior`，见[越界回弹](overscroll.md) |
+
+## 主题默认按压高光
+
+`MochiTheme` 提供 `LocalIndication`。普通 `clickable` / `combinedClickable` 自动使用
+`MochiGlowIndication`：保留高光、光心跟手与淡出，不缩放、平移或融合卡片。
+按下和滚动取消由同一个点击 owner 的 InteractionSource 决定；指针观察器只补充移动坐标，不消费输入，
+子按钮的按压不会直接点亮父卡片。快速轻点保留短脉冲，滚动取消立即退场；焦点与悬停从区域中心发光。
+
+```kotlin
+MochiTheme {
+    Box(Modifier.clip(shape).background(color).clickable(onClick = onClick)) { content() }
+}
+```
+
+`shape`、`color`、`onClick` 与 `content` 是宿主的真实外观和动作。高光覆盖内容，外层 clip 决定裁剪。
+在 M3 宿主中把 MochiTheme 放在 MaterialTheme 内层。M3 组件内部显式使用的 ripple 不由此替换。
+库按钮、列表行及显式 mochiPressGlow 保留自己的反馈，不叠加默认高光；自定义组件已有反馈时传 indication = null。
+需要局部改变高光时，在主题内覆盖 LocalIndication，例如 `MochiGlowIndication(MochiGlowDefaults.spec(color))`。
+高级按钮形变继续使用原生按钮，按实际尺寸配置或使用栏按钮，不在 Theme 中按大小推断。
 
 ## 卡片高度
 

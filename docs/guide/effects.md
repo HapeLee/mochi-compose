@@ -5,12 +5,33 @@ Every component in the library is built from three shared effects: **press glow*
 | Effect | Package | Main API |
 |---|---|---|
 | Card height | `ui.feice.mochi.effect.content` | `Modifier.mochiAnimateHeight`; enabled by default in cards |
-| Press glow | `ui.feice.mochi.effect.glow` | `rememberMochiGlowState`, `Modifier.mochiPressGlow`, `Modifier.mochiGlow` |
+| Press glow | `ui.feice.mochi.effect.glow` | `MochiGlowIndication`, `rememberMochiGlowState`, `Modifier.mochiPressGlow`, `Modifier.mochiGlow` |
 | Elastic | `ui.feice.mochi.effect.elastic` | `rubberBand`, `rememberMochiRubberBandState`, `Modifier.mochiRubberBand`, `Modifier.mochiJelly`, `MochiFollowSpring` |
 | Metaball | `ui.feice.mochi.effect.metaball` | `rememberMochiMetaballRenderer`, `DrawScope.drawMochiMetaball`, `proximityFuse` |
 | Content transitions | `ui.feice.mochi.effect.content` | `MochiMorphIcon`, `MochiBlurText`, `MochiBlurVisibility`, `MochiCounterText`, `MochiBlurCrossfade`, see [Content transitions](content-transitions.md) |
 | HDR highlights (experimental) | `ui.feice.mochi.effect.hdr` | `MochiHdr`, `MochiHdrPalette`, `MochiEdgeGlow`; see [HDR highlights](hdr.md) |
 | Overscroll | `ui.feice.mochi.effect.overscroll` | `ProvideMochiOverscroll`, `rememberMochiOverscrollEffect`, `MochiScrollDefaults.flingBehavior`; see [Overscroll](overscroll.md) |
+
+## Theme indication
+
+`MochiTheme` provides `LocalIndication`. Ordinary `clickable` / `combinedClickable` regions receive
+`MochiGlowIndication`: glow, pointer following and fade-out without scaling, moving or fusing cards.
+The click owner's InteractionSource controls press and cancellation. Pointer observation only updates coordinates
+and never consumes input, so a child button's press does not directly illuminate its parent card.
+Quick taps retain a short pulse; scroll cancellation releases immediately. Focus and hover glow at the center.
+
+```kotlin
+MochiTheme {
+    Box(Modifier.clip(shape).background(color).clickable(onClick = onClick)) { content() }
+}
+```
+
+The host supplies `shape`, `color`, `onClick` and `content`. Glow overlays content; the outer clip owns its shape.
+Inside a Material host, place MochiTheme inside MaterialTheme. Explicit ripples inside M3 components are unaffected.
+Native buttons, list rows and explicit mochiPressGlow retain their own feedback. Custom components with existing
+feedback should use indication = null. Override LocalIndication inside the theme to customize glow, for example
+`MochiGlowIndication(MochiGlowDefaults.spec(color))`. Advanced deformation stays with native buttons, configured
+for their actual size or using bar buttons; the theme does not infer button roles from dimensions.
 
 ## Card height
 
