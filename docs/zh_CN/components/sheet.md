@@ -23,7 +23,7 @@ Button(onClick = { sheet.show() })
 
 只要全屏：`rememberMochiSheetState(detents = listOf(MochiSheetDetent.Large))`。
 
-贴合内容：`rememberMochiSheetState(detents = listOf(MochiSheetDetent.FitContent))`。面板高度跟随内容，留边与半屏一致；内容超过半屏时停在半屏并在 `MochiSheetContent` 里滚动。需要还能上拉到全屏时，与 `Large` 组合使用。
+贴合内容：`rememberMochiSheetState(detents = listOf(MochiSheetDetent.FitContent))`。面板高度跟随内容，留边与半屏一致；内容超过可用高度时停在全屏位置并在 `MochiSheetContent` 里滚动。异步加载导致内容变高时面板会持续跟随，不需要重新 `show()`。需要还能上拉到全屏时，与 `Large` 组合使用。
 
 面板内选项卡片与其他分组卡片统一使用 `MochiListDefaults.colors()`：浅色白卡片，深色沿用共享分组容器。不要单独覆盖成 `surfaceContainerHigh`。
 

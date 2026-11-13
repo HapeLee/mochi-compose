@@ -40,6 +40,40 @@ class FitContentDetentTest {
     }
 
     @Test
+    fun fitTopIsSafeBeforeTheWindowHeightArrives() {
+        val state = fitOnly()
+        state.largeTop = 12f
+        state.height = 0f
+
+        assertEquals(0f, state.topOf(MochiSheetDetent.FitContent))
+    }
+
+    @Test
+    fun fitContentCanReachTheFullScreenTop() {
+        val state = fitOnly()
+        state.height = 2000f
+        state.largeTop = 80f
+        state.fitHeight = 2500f
+
+        assertEquals(80f, state.topOf(MochiSheetDetent.FitContent))
+    }
+
+    @Test
+    fun largenessStaysFiniteWhenFitContentFillsTheScreen() {
+        val state = MochiSheetState(
+            listOf(MochiSheetDetent.FitContent, MochiSheetDetent.Large),
+            MochiSheetDetent.FitContent,
+        )
+        state.height = 2000f
+        state.largeTop = 80f
+        state.fitHeight = 1920f
+
+        assertEquals(80f, state.topOf(MochiSheetDetent.FitContent))
+        runBlocking { state.top.snapTo(80f) }
+        assertEquals(1f, state.largeness, 0.001f)
+    }
+
+    @Test
     fun combinedWithLargeStillReportsLargeness() {
         val state = MochiSheetState(
             listOf(MochiSheetDetent.FitContent, MochiSheetDetent.Large),

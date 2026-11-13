@@ -132,7 +132,7 @@ public enum class MochiSheetDetent {
     Large,
 
     /**
-     * 内容高度：面板贴合内容，四周留边与 [Medium] 一致；内容超过半屏时停在半屏并让内容滚动。
+     * 内容高度：面板贴合内容，留边与 [Medium] 一致；内容超过可用高度时停在 [Large] 的位置并让内容滚动。
      * 只停这一档时面板不可上拉；与 [Large] 组合时可从内容高度拉向全屏。
      */
     FitContent,
@@ -168,7 +168,12 @@ public class MochiSheetState internal constructor(internal val detents: List<Moc
 
     internal val mediumTop: Float get() = height * 0.5f
 
-    internal val fitTop: Float get() = (height - fitHeight).coerceIn(largeTop, height)
+    internal val fitTop: Float
+        get() {
+            // 首帧窗口高度还没回写时 largeTop 可能大于 height，coerceIn 的空范围会抛异常。
+            if (height <= largeTop) return height
+            return (height - fitHeight).coerceIn(largeTop, height)
+        }
 
     internal fun topOf(d: MochiSheetDetent): Float = when (d) {
         MochiSheetDetent.Large -> largeTop
@@ -195,6 +200,8 @@ public class MochiSheetState internal constructor(internal val detents: List<Moc
                 MochiSheetDetent.FitContent in detents -> fitTop
                 else -> return presence
             }
+            // 内容撑满全屏时 fitTop 与 largeTop 重合，smoothstep 的分母为 0。
+            if (lowest <= largeTop) return if (t <= largeTop) 1f else presence
             return 1f - smoothstep(largeTop, lowest, t)
         }
 
@@ -255,7 +262,7 @@ public fun Modifier.mochiSheetBackdrop(state: MochiSheetState): Modifier = this
 /**
  * iOS 的底部面板（sheet），不做玻璃：
  * - 半屏时悬浮：左右和底部留 8dp，底部圆角与屏幕同心；顶部两角上限为 48dp，小圆角不额外缩减
- * - [MochiSheetDetent.FitContent] 贴合内容：留边与半屏一致，内容超过半屏时停在半屏并让内容滚动
+ * - [MochiSheetDetent.FitContent] 贴合内容：留边与半屏一致，内容超过可用高度时停在 [MochiSheetDetent.Large] 的位置并让内容滚动
  * - 拖动和展开/收起时保持原来的单层连续圆角轮廓，后面的页面（[mochiSheetBackdrop]）随展开缩小退后
  * - 全屏停稳后开启补底，上拉及回弹继续铺满；向下收起或返回时撤回，导航安全区只约束内容
  * - 内部导航默认继承面板转场圆角；全屏补底时侧推只保留顶部两角，底部两角为直角
@@ -370,12 +377,29 @@ public fun MochiSheet(
                         // 先等面板组合、排版、画完、帧率回稳（新建浮层、第一次打开时最重），再开始弹出，开头不掉帧
                         awaitFrameSettle(framePeriod)
                     }
-                    // FitContent 的停靠点由内容测量决定，等首帧布局回写后再弹出。
-                    if (MochiSheetDetent.FitContent in state.detents) {
+                    if (MochiSheetDetent.FitContent in state.detents &&
+                        state.initial == MochiSheetDetent.FitContent) {
+                        // FitContent 的停靠点由内容测量决定，等首帧布局回写后再弹出。
                         snapshotFlow { state.fitHeight }.first { it > 0f }
+                        // 列表、图片等内容常在弹出后才加载完。持续跟随内容高度更新动画目标，
+                        // 避免面板先停在首帧那个偏矮的高度、过一会儿才补一次动画长起来。
+                        snapshotFlow { Triple(state.fitTop, state.requested, state.dragging) }
+                            .distinctUntilChanged()
+                            .collectLatest { (target, requested, dragging) ->
+                                val top = state.top.value
+                                if (!requested || dragging || state.height <= 0f || top.isNaN()) return@collectLatest
+                                if (abs(top - target) <= 1f) return@collectLatest
+                                // 只有「用户明确拉到 Large 档」才不抢回控制权；内容变矮时仍要跟随下降。
+                                val pulledToLarge = MochiSheetDetent.Large in state.detents &&
+                                    abs(top - state.largeTop) <= 1f &&
+                                    abs(target - state.largeTop) > 1f
+                                if (pulledToLarge) return@collectLatest
+                                interruptible { state.top.animateTo(target, spring) }
+                            }
+                    } else {
+                        val settled = interruptible { state.top.animateTo(state.topOf(state.initial), spring) }
+                        if (settled && state.requested && state.initial == MochiSheetDetent.Large) state.bottomFilled = true
                     }
-                    val settled = interruptible { state.top.animateTo(state.topOf(state.initial), spring) }
-                    if (settled && state.requested && state.initial == MochiSheetDetent.Large) state.bottomFilled = true
                 } else {
                     // 收起途中被打断（比如收之前已经按住在拖）就接着收，直到真的收到底
                     var done = false
@@ -618,12 +642,12 @@ public fun MochiSheet(
                         Column(
                             Modifier
                                 .layout { m, c ->
-                                    // 固定档沿用原来的固定测量高度；FitContent 只测到最高内容上限，
-                                    // 再把结果回写成新的停靠点。底部补齐仅由表面在停稳后处理。
+                                    // 固定档沿用原来的固定测量高度；FitContent 测到全屏上限，
+                                    // 再把「内容 + 导航安全区 + 悬浮底边」回写成新的停靠点。
                                     val fit = MochiSheetDetent.FitContent in state.detents
                                     val highest = if (fit) {
                                         state.detents.filter { it != MochiSheetDetent.FitContent }
-                                            .minOfOrNull { state.topOf(it) } ?: state.mediumTop
+                                            .minOfOrNull { state.topOf(it) } ?: state.largeTop
                                     } else {
                                         state.detents.minOf { state.topOf(it) }
                                     }
@@ -635,7 +659,8 @@ public fun MochiSheet(
                                         m.measure(Constraints.fixed(c.maxWidth, available))
                                     }
                                     if (fit) {
-                                        val fitted = (p.height + bottomGap).coerceIn(0f, state.height - state.largeTop)
+                                        val maxFit = (state.height - state.largeTop).coerceAtLeast(0f)
+                                        val fitted = (p.height + navigationBottom + inset).coerceIn(0f, maxFit)
                                         if (state.fitHeight != fitted) state.fitHeight = fitted
                                     }
                                     layout(c.maxWidth, if (fit) p.height else c.maxHeight) { p.place(0, 0) }

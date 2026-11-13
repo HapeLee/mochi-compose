@@ -9,8 +9,10 @@
 
 ### Fit-content sheet / 内容高度面板
 
-- Added: `MochiSheetDetent.FitContent` stops the sheet at its content height with the same floating insets as `Medium`; content taller than half the screen stops at half height and scrolls. Combine it with `Large` to keep full-screen expansion.
-  新增：`MochiSheetDetent.FitContent` 让面板停在内容高度，留边与半屏一致；内容超过半屏时停在半屏并滚动。与 `Large` 组合时仍可上拉到全屏。
+- Added: `MochiSheetDetent.FitContent` stops the sheet at its content height with the same floating insets as `Medium`; content taller than the available height stops at the full-screen detent and scrolls. Combine it with `Large` to keep full-screen expansion.
+  新增：`MochiSheetDetent.FitContent` 让面板停在内容高度，留边与半屏一致；内容超过可用高度时停在全屏位置并滚动。与 `Large` 组合时仍可上拉到全屏。
+- Changed: `FitContent` measures up to `largeTop` instead of half height, and `fitHeight` now includes the navigation-bar inset and the floating bottom margin. The first frame no longer throws when the window height has not arrived, `largeness` stays finite when fit content fills the screen, and the entry animation keeps following the content height, so late-loading lists and images no longer need a corrective animation.
+  变更：`FitContent` 的测量上限由半屏改为全屏，`fitHeight` 计入导航安全区与悬浮底边；首帧窗口高度未回写时不再抛异常，内容撑满全屏时 `largeness` 不再退化为 NaN，弹出动画持续跟随内容高度，异步加载的列表与图片不再需要补正动画。
 
 ### Submenus / 一层子菜单
 

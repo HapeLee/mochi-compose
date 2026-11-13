@@ -23,7 +23,7 @@ Button(onClick = { sheet.show() })
 
 Large only: `rememberMochiSheetState(detents = listOf(MochiSheetDetent.Large))`.
 
-Fit to content: `rememberMochiSheetState(detents = listOf(MochiSheetDetent.FitContent))`. The sheet follows its content height with the same floating insets as `Medium`; content taller than half the screen stops at half height and scrolls inside `MochiSheetContent`. Combine it with `Large` when the sheet should still be pullable to full screen.
+Fit to content: `rememberMochiSheetState(detents = listOf(MochiSheetDetent.FitContent))`. The sheet follows its content height with the same floating insets as `Medium`; content taller than the available height stops at the full-screen detent and scrolls inside `MochiSheetContent`. The sheet keeps following late-loading content, so no extra `show()` is needed. Combine it with `Large` when the sheet should still be pullable to full screen.
 
 Cards inside the sheet use the same `MochiListDefaults.colors()` as other grouped option cards: white in light mode and the shared grouped container in dark mode. Do not override them with `surfaceContainerHigh`.
 
