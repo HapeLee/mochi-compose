@@ -97,7 +97,7 @@ class SheetLayoutRegression {
                                         ) {
                                             listOf(MochiSheetDetent.Large)
                                         } else {
-                                            MochiSheetDetent.entries
+                                            listOf(MochiSheetDetent.Medium, MochiSheetDetent.Large)
                                         },
                                         initial = initial,
                                     )

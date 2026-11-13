@@ -130,6 +130,12 @@ public enum class MochiSheetDetent {
 
     /** 全屏：贴边铺满到状态栏下面，后面的页面缩小退后 */
     Large,
+
+    /**
+     * 内容高度：面板贴合内容，四周留边与 [Medium] 一致；内容超过半屏时停在半屏并让内容滚动。
+     * 只停这一档时面板不可上拉；与 [Large] 组合时可从内容高度拉向全屏。
+     */
+    FitContent,
 }
 
 /**
@@ -152,13 +158,23 @@ public class MochiSheetState internal constructor(internal val detents: List<Moc
     internal var width by mutableIntStateOf(0)
     internal var largeTop = 0f
 
+    /** [MochiSheetDetent.FitContent] 的可见高度（含底部悬浮边距与导航安全区），由内容测量回写 */
+    internal var fitHeight by mutableFloatStateOf(0f)
+
     /** 屏幕的物理圆角（px），后面页面退后时按它裁 */
     internal var screenCorners: MochiScreenCorners = MochiScreenCorners.None
     internal var fallbackCorner = 0f
     internal var statusTop = 0f
 
     internal val mediumTop: Float get() = height * 0.5f
-    internal fun topOf(d: MochiSheetDetent): Float = if (d == MochiSheetDetent.Large) largeTop else mediumTop
+
+    internal val fitTop: Float get() = (height - fitHeight).coerceIn(largeTop, height)
+
+    internal fun topOf(d: MochiSheetDetent): Float = when (d) {
+        MochiSheetDetent.Large -> largeTop
+        MochiSheetDetent.Medium -> mediumTop
+        MochiSheetDetent.FitContent -> fitTop
+    }
 
     /** 面板出没出来：0 = 完全收起，1 = 到了最低那一档 */
     internal val presence: Float
@@ -174,8 +190,12 @@ public class MochiSheetState internal constructor(internal val detents: List<Moc
         get() {
             val t = top.value
             if (t.isNaN() || height <= 0f || MochiSheetDetent.Large !in detents) return 0f
-            if (MochiSheetDetent.Medium !in detents) return presence
-            return 1f - smoothstep(largeTop, mediumTop, t)
+            val lowest = when {
+                MochiSheetDetent.Medium in detents -> mediumTop
+                MochiSheetDetent.FitContent in detents -> fitTop
+                else -> return presence
+            }
+            return 1f - smoothstep(largeTop, lowest, t)
         }
 
     /** 全屏停稳后保留补底，上拉及回弹不撤回；向下收起或返回才结束。 */
@@ -235,13 +255,14 @@ public fun Modifier.mochiSheetBackdrop(state: MochiSheetState): Modifier = this
 /**
  * iOS 的底部面板（sheet），不做玻璃：
  * - 半屏时悬浮：左右和底部留 8dp，底部圆角与屏幕同心；顶部两角上限为 48dp，小圆角不额外缩减
+ * - [MochiSheetDetent.FitContent] 贴合内容：留边与半屏一致，内容超过半屏时停在半屏并让内容滚动
  * - 拖动和展开/收起时保持原来的单层连续圆角轮廓，后面的页面（[mochiSheetBackdrop]）随展开缩小退后
  * - 全屏停稳后开启补底，上拉及回弹继续铺满；向下收起或返回时撤回，导航安全区只约束内容
  * - 内部导航默认继承面板转场圆角；全屏补底时侧推只保留顶部两角，底部两角为直角
  * - 内页转场轮廓、压暗和阴影使用面板可见高度（含导航区）；正文单独保留固定测量高度和安全区
  * - 整块面板都能拖：跟手，往上拉过最高一档被橡皮筋拉住；松手按速度投影吸附到最近的一档（换档时轻震），拉得够低就关闭
  * - 点面板外面、按返回键关闭；预测性返回时面板跟手缩小（往底边收），松手关闭，滑回去取消
- * - [hideNavigationBar]：半屏悬浮时把系统导航栏（手势小白条）藏起来，面板下面那条边干干净净；
+ * - [hideNavigationBar]：悬浮档（半屏 / 内容高度）时把系统导航栏（手势小白条）藏起来，面板下面那条边干干净净；
  *   拉到全屏、或者面板关掉时恢复。藏起来时从屏幕底边上滑还能临时叫出来
  * - 面板显示期间系统导航栏底色和分隔线透明，关闭系统对比度遮罩；最后一个面板关闭后恢复原设置
  *
@@ -348,6 +369,10 @@ public fun MochiSheet(
                         state.top.snapTo(state.height)
                         // 先等面板组合、排版、画完、帧率回稳（新建浮层、第一次打开时最重），再开始弹出，开头不掉帧
                         awaitFrameSettle(framePeriod)
+                    }
+                    // FitContent 的停靠点由内容测量决定，等首帧布局回写后再弹出。
+                    if (MochiSheetDetent.FitContent in state.detents) {
+                        snapshotFlow { state.fitHeight }.first { it > 0f }
                     }
                     val settled = interruptible { state.top.animateTo(state.topOf(state.initial), spring) }
                     if (settled && state.requested && state.initial == MochiSheetDetent.Large) state.bottomFilled = true
@@ -593,12 +618,27 @@ public fun MochiSheet(
                         Column(
                             Modifier
                                 .layout { m, c ->
-                                    // 内容沿用原来的固定测量高度；底部补齐仅由表面在停稳后处理。
-                                    val highest = state.detents.minOf { state.topOf(it) }
+                                    // 固定档沿用原来的固定测量高度；FitContent 只测到最高内容上限，
+                                    // 再把结果回写成新的停靠点。底部补齐仅由表面在停稳后处理。
+                                    val fit = MochiSheetDetent.FitContent in state.detents
+                                    val highest = if (fit) {
+                                        state.detents.filter { it != MochiSheetDetent.FitContent }
+                                            .minOfOrNull { state.topOf(it) } ?: state.mediumTop
+                                    } else {
+                                        state.detents.minOf { state.topOf(it) }
+                                    }
                                     val bottomGap = if (MochiSheetDetent.Large in state.detents) 0f else inset
-                                    val h = (state.height - highest - bottomGap).coerceAtLeast(0f).roundToInt()
-                                    val p = m.measure(Constraints.fixed(c.maxWidth, h))
-                                    layout(c.maxWidth, c.maxHeight) { p.place(0, 0) }
+                                    val available = (state.height - highest - bottomGap).coerceAtLeast(0f).roundToInt()
+                                    val p = if (fit) {
+                                        m.measure(Constraints(maxWidth = c.maxWidth, maxHeight = available))
+                                    } else {
+                                        m.measure(Constraints.fixed(c.maxWidth, available))
+                                    }
+                                    if (fit) {
+                                        val fitted = (p.height + bottomGap).coerceIn(0f, state.height - state.largeTop)
+                                        if (state.fitHeight != fitted) state.fitHeight = fitted
+                                    }
+                                    layout(c.maxWidth, if (fit) p.height else c.maxHeight) { p.place(0, 0) }
                                 }
                                 // 安全区只限制内容，背景继续覆盖导航栏；显隐不改变预留值。
                                 .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility.only(WindowInsetsSides.Bottom)),
@@ -698,9 +738,12 @@ private fun HideNavBarWhileFloating(state: MochiSheetState) {
         val oldBehavior = ctl.systemBarsBehavior
         ctl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         try {
-            // 半屏请求打开就隐藏，向下离开全屏也立即隐藏；不再等待弹簧停稳或反复跟随 isRunning。
+            // 悬浮档（Medium / FitContent）请求打开就隐藏，向下离开全屏也立即隐藏；不再等待弹簧停稳或反复跟随 isRunning。
             // 内容已使用 ignoringVisibility 安全区，导航栏显隐不会改变面板内部的预留空间。
-            snapshotFlow { state.requested && MochiSheetDetent.Medium in state.detents && state.largeness < 0.999f }
+            snapshotFlow {
+                state.requested && state.detents.any { it != MochiSheetDetent.Large } &&
+                    state.largeness < 0.999f
+            }
                 .distinctUntilChanged()
                 .collect { hide ->
                     if (hide) ctl.hide(WindowInsetsCompat.Type.navigationBars()) else ctl.show(WindowInsetsCompat.Type.navigationBars())
