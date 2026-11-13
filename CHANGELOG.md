@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+### Overlay teardown / 浮层销毁时机
+
+- Fixed: an `InWindowOverlay` (sheet, dialog, popover, toast, menu) that is still composed when the root engine or theme changes no longer removes its `ComposeView` from the `DecorView` in the same frame. Detaching during the window's measure pass could crash `FrameLayout.onMeasure`; the overlay is now hidden immediately, detached on the next posted frame, and detached synchronously only when the window is already gone. A missing child view no longer throws during teardown.
+  修正：根引擎或主题切换时仍挂着的 `InWindowOverlay`（面板、对话框、弹出层、提示、菜单）不再在同一帧从 `DecorView` 摘除 `ComposeView`。窗口测量过程中 detach 会让 `FrameLayout.onMeasure` 崩溃；现在先立即隐藏，下一帧再 detach，窗口已经销毁时才同步摘除；销毁时也不再因缺少子 View 抛异常。
+
 ### Submenus / 一层子菜单
 
 - `MochiItem.children` + `MochiDropdown` / `MochiIconDropdown` 的 `onChildClick(parent, child)`: one level of submenu. Tapping a parent switches layer instead of selecting it, a back row (‹ + parent label) sits at the top of the panel, the system back key pops the layer first, the panel height follows the child count, and the list starts at the top when entering while the top layer keeps its scroll. Without `onChildClick` an item with `children` behaves like a plain item, so an entry can never do nothing. Two levels only.

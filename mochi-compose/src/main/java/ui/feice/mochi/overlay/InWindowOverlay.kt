@@ -5,6 +5,7 @@ package ui.feice.mochi.overlay
 
 import android.content.Context
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
@@ -75,21 +76,37 @@ internal fun InWindowOverlay(leaving: () -> Boolean = { false }, content: @Compo
             )
         }
     }
-    DisposableEffect(overlay) {
-        val decor = hostView.rootView as ViewGroup
-        decor.addView(overlay, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    val decor = hostView.rootView as? ViewGroup
+    DisposableEffect(overlay, decor) {
+        if (decor == null) return@DisposableEffect onDispose {}
+        if (overlay.parent == null) {
+            decor.addView(overlay, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
         onDispose {
-            if (overlay.hasFocus()) {
-                // 浮层里有输入框聚焦时直接移除，系统会把焦点交回页面，Compose 顺手聚焦页面上第一个输入框、键盘又弹出来。
-                // 移除的那一刻先不让页面接焦点，下一帧恢复：关掉后什么都不聚焦（iOS 关掉警告框键盘一起收起）
+            // 不能同步摘 DecorView 的子 View：引擎切换、窗口重建等场景下页面正在重新测量，
+            // 测量过程中子 View 列表变化会让框架的 FrameLayout.onMeasure 读到无效 child 并崩溃。
+            val hadFocus = overlay.hasFocus()
+            overlay.visibility = View.GONE
+            val composeView = overlay.getChildAt(0) as? ComposeView
+            // 浮层里有输入框聚焦时，系统会把焦点交回页面，Compose 顺手聚焦页面上第一个输入框、键盘又弹出来。
+            // 移除期间先不让页面接焦点，下一帧恢复：关掉后什么都不聚焦（iOS 关掉警告框键盘一起收起）。
+            val previousFocusability = if (hadFocus) {
                 val old = decor.descendantFocusability
                 decor.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-                decor.removeView(overlay)
-                decor.post { decor.descendantFocusability = old }
+                old
             } else {
-                decor.removeView(overlay)
+                null
             }
-            (overlay.getChildAt(0) as ComposeView).disposeComposition()
+            val detach = {
+                (overlay.parent as? ViewGroup)?.removeView(overlay)
+                composeView?.disposeComposition()
+                previousFocusability?.let { decor.descendantFocusability = it }
+            }
+            if (decor.isAttachedToWindow) {
+                decor.post { detach() }
+            } else {
+                detach()
+            }
         }
     }
 }
